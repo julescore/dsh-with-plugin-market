@@ -98,8 +98,8 @@ try {
 
     $env:DSH_HOME = $freshHome
     $dump = & $node $launcher web --patch $marketPatch --dump-config
-    if (($dump | Select-String -SimpleMatch '- id: dsh-market').Count -ne 1) { throw 'Windows verify: packaged market patch is absent' }
-    if (($dump | Select-String -SimpleMatch 'name: dshmarket-bundled').Count -ne 1) { throw 'Windows verify: packaged market alias is absent' }
+    if (@($dump | Select-String -SimpleMatch '- id: dsh-market').Count -ne 1) { throw 'Windows verify: packaged market patch is absent' }
+    if (@($dump | Select-String -SimpleMatch 'name: dshmarket-bundled').Count -ne 1) { throw 'Windows verify: packaged market alias is absent' }
     $url = Start-Host $freshHome @('--patch', $marketPatch)
     $registry = Invoke-MarketJson GET "$url/dsh-market/registry"
     if ($null -eq $registry) { throw 'Windows verify: plugin registry returned no data' }
@@ -117,10 +117,10 @@ try {
     $marketVersion = (& $node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).version" (Join-Path $conflictHome 'profiles/web/node_modules/dshmarket/package.json'))
     if ($marketVersion -ne '1.1.0') { throw 'Windows verify: previous market fixture is not dshmarket@1.1.0' }
     $localDump = & $node $launcher web --dump-config
-    if (($localDump | Select-String -SimpleMatch '- id: dsh-market').Count -ne 1) { throw 'Windows verify: local market conflict fixture is absent' }
+    if (@($localDump | Select-String -SimpleMatch '- id: dsh-market').Count -ne 1) { throw 'Windows verify: local market conflict fixture is absent' }
     $packagedDump = & $node $launcher web --patch $marketConflictPatch --dump-config
-    if (($packagedDump | Select-String -SimpleMatch '- id: dsh-market-packaged').Count -ne 1) { throw 'Windows verify: packaged conflict choice is absent' }
-    if (($packagedDump | Select-String -SimpleMatch 'name: dshmarket-bundled').Count -ne 1) { throw 'Windows verify: packaged conflict alias is absent' }
+    if (@($packagedDump | Select-String -SimpleMatch '- id: dsh-market-packaged').Count -ne 1) { throw 'Windows verify: packaged conflict choice is absent' }
+    if (@($packagedDump | Select-String -SimpleMatch 'name: dshmarket-bundled').Count -ne 1) { throw 'Windows verify: packaged conflict alias is absent' }
 
     $sha256 = (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLowerInvariant()
     Write-Output 'Windows verification passed'
