@@ -12,6 +12,8 @@ The application mounts the shared `apps/desktop/resources/market.patch.yml`, whi
 
 The shared distribution policy maps the `dsh-web-ui` repository and catalog subdirectory to `@linxin666/dsh-web-ui-all`, bypasses the release-age wait only for market self-updates, and explicitly denies the `cloudflared`, `cpu-features`, and `ssh2` build scripts unless the user already made a choice. It also installs the checksum-pinned **Anchored Standard (experimental)** and **Zero-Anchored Standard (experimental)** community presets as non-default system presets. Community plugins and presets remain third-party code and require user trust.
 
+Every market install or update must pass a complete Web-profile composition before it is accepted. A failure restores the dependency manifest, lockfile, build policy, and prior installed resolution. If startup still encounters an invalid profile created by an older build or another tool, the error page can move only the Web profile to a timestamped backup under `$DSH_HOME/profile-backups/` and reopen the application; sessions, settings, credentials, and personal presets are preserved.
+
 ## Build and verify
 
 Requirements: macOS 15+, Apple Silicon, Xcode Command Line Tools, Node.js `^22.19 || >=24`, Corepack, and first-build network access.
@@ -29,7 +31,7 @@ The build embeds the runtime, pinned Node and pnpm archives, patched market, nat
 .artifacts/macos/DeepSeek-Harness-<version>-macos-arm64.dmg
 ```
 
-`verify:macos` mounts the DMG in a clean location and checks the bundle identity, signature, runtime closure, both community preset behaviors, preset discovery and complete composition through the Host API, plugin market registry, `dsh-web-ui` install/restart/uninstall path, both conflict choices, and a real `dshmarket@1.1.0` to `1.2.3` first-click update.
+`verify:macos` mounts the DMG in a clean location and checks the bundle identity, signature, runtime closure, packaged recovery behavior, both community preset behaviors, preset discovery and complete composition through the Host API, plugin market registry, `dsh-web-ui` install/restart/uninstall path, both conflict choices, and a real `dshmarket@1.1.0` to `1.2.3` first-click update.
 
 ## Shared version and release
 

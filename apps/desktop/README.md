@@ -13,3 +13,7 @@ node --import tsx/esm apps/desktop/scripts/version.ts bump
 ```
 
 Both platform artifacts must report the same value from `apps/desktop/version.json`.
+
+The bundled market treats each install and update as a profile transaction. It snapshots `package.json`, `pnpm-lock.yaml`, and `pnpm-workspace.yaml`, composes the complete Web profile with `dsh --profile web --dump-config`, and restores the exact files plus the old offline lockfile resolution when the new plugin tree is invalid. This prevents incompatible plugins, including duplicate loader entry ids, from breaking the next launch.
+
+If an older application already left an invalid Web profile, both desktop shells offer **Back up and reset Web profile** on the startup error screen. Recovery moves only `$DSH_HOME/profiles/web` into `$DSH_HOME/profile-backups/`; sessions, settings, credentials, personal agent presets, and other profiles remain in place.

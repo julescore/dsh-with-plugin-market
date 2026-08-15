@@ -13,3 +13,7 @@ node --import tsx/esm apps/desktop/scripts/version.ts bump
 ```
 
 两个平台的产物必须都使用 `apps/desktop/version.json` 中的同一个版本号。
+
+内置市场会把每次安装和更新作为一次 profile 事务处理：先保存 `package.json`、`pnpm-lock.yaml` 和 `pnpm-workspace.yaml`，再通过 `dsh --profile web --dump-config` 组合完整 Web profile；如果新插件树无效，就恢复这些文件并按旧 lockfile 离线恢复依赖。因此，包括 loader entry id 重复在内的不兼容插件不会破坏下次启动。
+
+如果旧版应用已经留下无效 Web profile，两个桌面外壳都会在启动错误页提供“备份并重置 Web profile”。恢复操作只把 `$DSH_HOME/profiles/web` 移到 `$DSH_HOME/profile-backups/`；会话、设置、凭据、个人 Agent preset 和其他 profile 都保留原位。

@@ -130,6 +130,7 @@ PNPM_LAUNCHER
 chmod 755 "$app/Contents/Resources/node/bin/pnpm"
 cp "$desktop_dir/resources/market.patch.yml" "$app/Contents/Resources/desktop/market.patch.yml"
 cp "$desktop_dir/resources/market-conflict.patch.yml" "$app/Contents/Resources/desktop/market-conflict.patch.yml"
+cp "$desktop_dir/scripts/reset-web-profile.mjs" "$app/Contents/Resources/desktop/reset-web-profile.mjs"
 cp "$app_dir/resources/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/THIRD-PARTY-NOTICES.md"
 cp -R "$runtime"/. "$app/Contents/Resources/runtime/"
 mkdir -p "$app/Contents/Resources/runtime/node_modules/dshmarket-bundled"

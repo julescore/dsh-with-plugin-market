@@ -6,6 +6,8 @@ This directory packages the existing DeepSeek Harness Web application as a nativ
 
 The application uses a .NET 8 WinForms shell with Microsoft Edge WebView2, bundles Node.js 24.19.0, pnpm 11.7.0, the production Harness runtime, `dshmarket@1.2.3`, and the checksum-pinned **Anchored Standard (experimental)** and **Zero-Anchored Standard (experimental)** community presets, and generates an Inno Setup installer. The presets are selectable for new sessions but Standard remains the default. Windows normally includes WebView2 Runtime; when it is absent the application presents an explicit installation requirement.
 
+Market installs and updates are accepted only after the complete Web profile composes successfully; otherwise the previous manifest, lockfile, build policy, and installed resolution are restored. A startup failure page can move only the invalid Web profile into `$DSH_HOME/profile-backups/` and restart, while preserving sessions, settings, credentials, personal presets, and other profiles.
+
 Build and verify on Windows:
 
 ```powershell
@@ -19,4 +21,4 @@ The artifact is written to:
 .artifacts/windows/DeepSeek-Harness-<version>-windows-x64-setup.exe
 ```
 
-`verify:windows` silently installs into an isolated directory, runs the shell self-test, checks embedded Node and pnpm, verifies both community preset behaviors, starts the bundled Harness, proves both presets are discoverable and mountable through the Host API, reads the market registry, installs and removes the curated `dsh-web-ui` aggregate, and checks both plugin-market conflict compositions.
+`verify:windows` silently installs into an isolated directory, runs the shell self-test, checks embedded Node, pnpm, and packaged recovery behavior, verifies both community preset behaviors, starts the bundled Harness, proves both presets are discoverable and mountable through the Host API, reads the market registry, installs and removes the curated `dsh-web-ui` aggregate, and checks both plugin-market conflict compositions.

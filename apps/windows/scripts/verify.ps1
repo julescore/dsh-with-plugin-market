@@ -11,6 +11,7 @@ $testRoot = Join-Path $env:RUNNER_TEMP 'dsh-test'
 $installDir = Join-Path $testRoot 'i'
 $freshHome = Join-Path $testRoot 'fresh'
 $conflictHome = Join-Path $testRoot 'conflict'
+$recoveryHome = Join-Path $testRoot 'recovery'
 $selfTest = Join-Path $testRoot 'self-test.json'
 $stdout = Join-Path $testRoot 'stdout.log'
 $stderr = Join-Path $testRoot 'stderr.log'
@@ -79,7 +80,7 @@ function Invoke-MarketJson([string]$Method, [string]$Url, [hashtable]$Body = @{}
 
 try {
     if (-not (Test-Path $installer)) { throw "Windows verify: missing $installer" }
-    New-Item -ItemType Directory -Force -Path $testRoot, $installDir, $freshHome, $conflictHome | Out-Null
+    New-Item -ItemType Directory -Force -Path $testRoot, $installDir, $freshHome, $conflictHome, $recoveryHome | Out-Null
     $install = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=$installDir", "/LOG=$installerLog") -PassThru -Wait
     if ($install.ExitCode -ne 0) {
         $detail = if (Test-Path $installerLog) { Get-Content -Raw $installerLog } else { 'installer log was not created' }
@@ -92,7 +93,8 @@ try {
     $launcher = Join-Path $installDir 'runtime/lib/bin.js'
     $marketPatch = Join-Path $installDir 'desktop/market.patch.yml'
     $marketConflictPatch = Join-Path $installDir 'desktop/market-conflict.patch.yml'
-    foreach ($path in @($app, $node, $pnpm, $launcher, $marketPatch, $marketConflictPatch)) {
+    $recoveryScript = Join-Path $installDir 'desktop/reset-web-profile.mjs'
+    foreach ($path in @($app, $node, $pnpm, $launcher, $marketPatch, $marketConflictPatch, $recoveryScript)) {
         if (-not (Test-Path $path)) { throw "Windows verify: installed resource is missing: $path" }
     }
     $bundledBin = Split-Path -Parent $node
@@ -101,12 +103,38 @@ try {
     $selfTestProcess = Start-Process -FilePath $app -ArgumentList @('--self-test', $selfTest) -PassThru -Wait
     if ($selfTestProcess.ExitCode -ne 0) { throw 'Windows verify: shell self-test failed' }
     $self = Get-Content -Raw $selfTest | ConvertFrom-Json
-    if ($self.product -ne 'DeepSeek Harness' -or -not $self.node -or -not $self.launcher -or -not $self.marketPatch -or -not $self.marketConflictPatch -or -not $self.conflictParser) {
+    if ($self.product -ne 'DeepSeek Harness' -or -not $self.node -or -not $self.launcher -or -not $self.marketPatch -or -not $self.marketConflictPatch -or -not $self.recoveryScript -or -not $self.conflictParser) {
         throw "Windows verify: shell self-test returned unexpected data: $(Get-Content -Raw $selfTest)"
     }
     if ((& $node --version) -ne 'v24.19.0') { throw 'Windows verify: bundled Node version is unexpected' }
     if ((& $pnpm --version) -ne '11.7.0') { throw 'Windows verify: bundled pnpm version is unexpected' }
     & $node (Join-Path $desktopDir 'scripts/verify-agent-presets.mjs') (Join-Path $installDir 'runtime/config/agent-presets')
+
+    # The installed recovery tool moves only the mutable Web profile and preserves user data.
+    New-Item -ItemType Directory -Force -Path `
+        (Join-Path $recoveryHome 'profiles/web'), `
+        (Join-Path $recoveryHome 'storages'), `
+        (Join-Path $recoveryHome '.agent-presets/mine') | Out-Null
+    Set-Content -Encoding utf8NoBOM (Join-Path $recoveryHome 'profiles/web/package.json') '{"broken":true}'
+    Set-Content -Encoding utf8NoBOM (Join-Path $recoveryHome 'settings.yaml') 'kept: true'
+    Set-Content -Encoding utf8NoBOM (Join-Path $recoveryHome 'storages/sessions.json') 'kept'
+    Set-Content -Encoding utf8NoBOM (Join-Path $recoveryHome '.agent-presets/mine/agent.cordis.yml') 'kept'
+    $env:DSH_HOME = $recoveryHome
+    $recovery = (& $node $recoveryScript | ConvertFrom-Json)
+    if ($recovery.changed -ne $true -or (Test-Path (Join-Path $recoveryHome 'profiles/web'))) {
+        throw "Windows verify: installed recovery did not move the Web profile: $($recovery | ConvertTo-Json -Compress)"
+    }
+    $backup = [string]$recovery.backup
+    if (-not $backup.StartsWith((Join-Path $recoveryHome 'profile-backups')) -or -not (Test-Path (Join-Path $backup 'package.json'))) {
+        throw "Windows verify: installed recovery backup is invalid: $($recovery | ConvertTo-Json -Compress)"
+    }
+    foreach ($path in @(
+        (Join-Path $recoveryHome 'settings.yaml'),
+        (Join-Path $recoveryHome 'storages/sessions.json'),
+        (Join-Path $recoveryHome '.agent-presets/mine/agent.cordis.yml')
+    )) {
+        if (-not (Test-Path $path)) { throw "Windows verify: installed recovery removed preserved data: $path" }
+    }
 
     $env:DSH_HOME = $freshHome
     $dump = & $node $launcher web --patch $marketPatch --dump-config
@@ -123,7 +151,7 @@ try {
     }
     foreach ($presetId in $expectedPresets.Keys) {
         $entry = $presetEntries[$presetId]
-        if ($null -eq $entry -or $entry.name -ne $expectedPresets[$presetId] -or $entry.trust -ne 'system' -or $entry.broken) {
+        if ($null -eq $entry -or $entry.name -ne $expectedPresets[$presetId] -or $entry.trust -ne 'system' -or ($entry.PSObject.Properties.Name -contains 'broken')) {
             throw "Windows verify: packaged preset is not selectable: $presetId"
         }
         $created = Invoke-RpcJson $url 'session.create' @{ sessionId = "desktop-$presetId"; agentPreset = $presetId } "desktop-create-$presetId"

@@ -12,6 +12,8 @@
 
 共享发行策略会把 `dsh-web-ui` 仓库及目录地址映射到 `@linxin666/dsh-web-ui-all`，只为市场自身更新跳过发布等待期，并在用户没有既有选择时明确拒绝 `cloudflared`、`cpu-features` 和 `ssh2` 构建脚本；同时把经过校验和锁定的 **Anchored Standard (experimental)** 与 **Zero-Anchored Standard (experimental)** 社区 preset 安装成非默认系统 preset。社区插件和 preset 仍是需要用户自行信任的第三方代码。
 
+市场安装或更新必须通过完整 Web profile 组合检查才会被接受。检查失败时会恢复依赖清单、lockfile、构建策略和此前的安装解析结果。如果启动时仍遇到旧版应用或其他工具留下的无效 profile，错误页可以只把 Web profile 移到 `$DSH_HOME/profile-backups/` 下的时间戳备份，然后重新打开应用；会话、设置、凭据和个人 preset 都会保留。
+
 ## 构建与验证
 
 要求：macOS 15+、Apple Silicon、Xcode Command Line Tools、Node.js `^22.19 || >=24`、Corepack，以及首次构建时可访问网络。
@@ -29,7 +31,7 @@ pnpm run verify:macos
 .artifacts/macos/DeepSeek-Harness-<version>-macos-arm64.dmg
 ```
 
-`verify:macos` 会把 DMG 挂载到干净位置，检查应用标识、签名、运行时闭包、两个社区 preset 的行为、通过 Host API 发现 preset 并完成组合、插件市场目录、`dsh-web-ui` 安装/重启/卸载、两种冲突选择，以及从 `dshmarket@1.1.0` 首次点击更新到 `1.2.3` 的真实路径。
+`verify:macos` 会把 DMG 挂载到干净位置，检查应用标识、签名、运行时闭包、安装包内恢复工具的行为、两个社区 preset 的行为、通过 Host API 发现 preset 并完成组合、插件市场目录、`dsh-web-ui` 安装/重启/卸载、两种冲突选择，以及从 `dshmarket@1.1.0` 首次点击更新到 `1.2.3` 的真实路径。
 
 ## 共享版本与发行
 

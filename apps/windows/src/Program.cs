@@ -25,6 +25,7 @@ internal static class Program
                     launcher = File.Exists(resources.Launcher),
                     marketPatch = File.Exists(resources.MarketPatch),
                     marketConflictPatch = File.Exists(resources.MarketConflictPatch),
+                    recoveryScript = File.Exists(resources.RecoveryScript),
                     conflictParser = HarnessConfig.ContainsMarketEntry("- id: dsh-market\n  name: dshmarket\n"),
                 };
                 File.WriteAllText(args[1], JsonSerializer.Serialize(result));
@@ -48,7 +49,8 @@ internal sealed record HarnessResources(
     string Node,
     string Launcher,
     string MarketPatch,
-    string MarketConflictPatch)
+    string MarketConflictPatch,
+    string RecoveryScript)
 {
     internal static HarnessResources Load()
     {
@@ -58,8 +60,9 @@ internal sealed record HarnessResources(
             Path.Combine(root, "node", "node.exe"),
             Path.Combine(root, "runtime", "lib", "bin.js"),
             Path.Combine(root, "desktop", "market.patch.yml"),
-            Path.Combine(root, "desktop", "market-conflict.patch.yml"));
-        foreach (var path in new[] { resources.Node, resources.Launcher, resources.MarketPatch, resources.MarketConflictPatch })
+            Path.Combine(root, "desktop", "market-conflict.patch.yml"),
+            Path.Combine(root, "desktop", "reset-web-profile.mjs"));
+        foreach (var path in new[] { resources.Node, resources.Launcher, resources.MarketPatch, resources.MarketConflictPatch, resources.RecoveryScript })
         {
             if (!File.Exists(path)) throw new FileNotFoundException($"Required application resource is missing: {path}", path);
         }
@@ -79,6 +82,33 @@ internal sealed record HarnessResources(
         info.Environment["PATH"] = Path.Combine(Root, "node") + Path.PathSeparator + Environment.GetEnvironmentVariable("PATH");
         foreach (var argument in arguments) info.ArgumentList.Add(argument);
         return info;
+    }
+}
+
+internal sealed record ProfileRecoveryResult(bool Changed, string? Profile, string? Backup);
+
+internal static class ProfileRecovery
+{
+    internal static async Task<ProfileRecoveryResult> ResetAsync(HarnessResources resources)
+    {
+        using var process = new Process
+        {
+            StartInfo = resources.CreateStartInfo(new[] { resources.RecoveryScript }),
+        };
+        process.Start();
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        var output = await outputTask;
+        var error = await errorTask;
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"Unable to back up and reset the local Web profile (exit {process.ExitCode}).\n\n{error.Trim()}");
+        }
+        return JsonSerializer.Deserialize<ProfileRecoveryResult>(output, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+        }) ?? throw new InvalidOperationException("The local recovery tool returned an invalid result.");
     }
 }
 
@@ -137,6 +167,7 @@ internal sealed class MainForm : Form
     private HarnessResources? resources;
     private Uri? harnessOrigin;
     private bool stopping;
+    private bool recovering;
 
     internal MainForm()
     {
@@ -154,24 +185,7 @@ internal sealed class MainForm : Form
         try
         {
             resources = HarnessResources.Load();
-            var mode = MarketLaunchMode.Bundled;
-            if (await HarnessConfig.DetectsLocalMarketAsync(resources))
-            {
-                var choice = MessageBox.Show(
-                    this,
-                    "The local Web profile and this installer both contain a plugin market. Only one can be active at a time.\n\nYes: use the local plugin market\nNo: use the market bundled with this installer\nCancel: exit\n\nOther plugins, sessions, and credentials will not be deleted or reset.",
-                    "Plugin market conflict",
-                    MessageBoxButtons.YesNoCancel,
-                    MessageBoxIcon.Warning,
-                    MessageBoxDefaultButton.Button1);
-                if (choice == DialogResult.Cancel)
-                {
-                    Close();
-                    return;
-                }
-                mode = choice == DialogResult.Yes ? MarketLaunchMode.Local : MarketLaunchMode.BundledReplacingLocal;
-            }
-            StartHarness(resources, mode);
+            await StartHarnessAsync(resources);
         }
         catch (Exception error)
         {
@@ -179,8 +193,32 @@ internal sealed class MainForm : Form
         }
     }
 
+    private async Task StartHarnessAsync(HarnessResources loaded)
+    {
+        var mode = MarketLaunchMode.Bundled;
+        if (await HarnessConfig.DetectsLocalMarketAsync(loaded))
+        {
+            var choice = MessageBox.Show(
+                this,
+                "The local Web profile and this installer both contain a plugin market. Only one can be active at a time.\n\nYes: use the local plugin market\nNo: use the market bundled with this installer\nCancel: exit\n\nOther plugins, sessions, and credentials will not be deleted or reset.",
+                "Plugin market conflict",
+                MessageBoxButtons.YesNoCancel,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button1);
+            if (choice == DialogResult.Cancel)
+            {
+                Close();
+                return;
+            }
+            mode = choice == DialogResult.Yes ? MarketLaunchMode.Local : MarketLaunchMode.BundledReplacingLocal;
+        }
+        StartHarness(loaded, mode);
+    }
+
     private void StartHarness(HarnessResources loaded, MarketLaunchMode mode)
     {
+        harnessOrigin = null;
+        lock (errorTail) errorTail.Clear();
         var arguments = new List<string> { loaded.Launcher, "web" };
         if (mode == MarketLaunchMode.Bundled) arguments.AddRange(new[] { "--patch", loaded.MarketPatch });
         if (mode == MarketLaunchMode.BundledReplacingLocal) arguments.AddRange(new[] { "--patch", loaded.MarketConflictPatch });
@@ -205,12 +243,13 @@ internal sealed class MainForm : Form
         };
         harness.Exited += (_, _) =>
         {
-            if (stopping) return;
+            if (stopping || recovering) return;
             string detail;
             lock (errorTail) detail = errorTail.ToString().Trim();
             BeginInvoke(new Action(() => ShowFailure($"The Harness background process exited unexpectedly (exit {harness.ExitCode})." + (detail.Length == 0 ? "" : $"\r\n\r\n{detail}"))));
         };
         if (!harness.Start()) throw new InvalidOperationException("Unable to start the bundled DeepSeek Harness runtime.");
+        recovering = false;
         harness.BeginOutputReadLine();
         harness.BeginErrorReadLine();
     }
@@ -259,14 +298,55 @@ internal sealed class MainForm : Form
             BeginInvoke(new Action(() => ShowFailure(message)));
             return;
         }
-        Controls.Clear();
+        var panel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(60),
+        };
+        panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         status.Text = $"Unable to start DeepSeek Harness\r\n\r\n{message}";
-        Controls.Add(status);
+        var recover = new Button
+        {
+            Text = "Back up and reset Web profile, then reopen",
+            AutoSize = true,
+            Anchor = AnchorStyles.None,
+            Padding = new Padding(12, 6, 12, 6),
+        };
+        recover.Click += async (_, _) => await RecoverAsync(recover);
+        panel.Controls.Add(status, 0, 0);
+        panel.Controls.Add(recover, 0, 1);
+        Controls.Clear();
+        Controls.Add(panel);
     }
 
-    private void StopHarness()
+    private async Task RecoverAsync(Button button)
     {
-        stopping = true;
+        if (resources is null) return;
+        button.Enabled = false;
+        status.Text = "Recovering the local environment…\r\n\r\nThe Web profile will be backed up first. Sessions, settings, credentials, and personal presets are preserved.";
+        try
+        {
+            recovering = true;
+            StopHarness(forExit: false);
+            var result = await ProfileRecovery.ResetAsync(resources);
+            status.Text = result.Backup is null
+                ? "No existing Web profile needed a backup. Restarting DeepSeek Harness…"
+                : $"The old Web profile was backed up to:\r\n{result.Backup}\r\n\r\nRestarting DeepSeek Harness…";
+            await StartHarnessAsync(resources);
+        }
+        catch (Exception error)
+        {
+            recovering = false;
+            ShowFailure(error.Message);
+        }
+    }
+
+    private void StopHarness(bool forExit = true)
+    {
+        if (forExit) stopping = true;
         if (harness is null || harness.HasExited) return;
         try
         {

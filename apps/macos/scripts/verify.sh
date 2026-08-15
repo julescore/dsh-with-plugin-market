@@ -11,6 +11,7 @@ dmg="$out_dir/DeepSeek-Harness-${version}-macos-arm64.dmg"
 mount_point=$(mktemp -d /private/tmp/deepseek-harness-macos.XXXXXX)
 fresh_home=$(mktemp -d /private/tmp/deepseek-harness-fresh-home.XXXXXX)
 conflict_home=$(mktemp -d /private/tmp/deepseek-harness-conflict-home.XXXXXX)
+recovery_home=$(mktemp -d /private/tmp/deepseek-harness-recovery-home.XXXXXX)
 stdout=$(mktemp /private/tmp/deepseek-harness-stdout.XXXXXX)
 stderr=$(mktemp /private/tmp/deepseek-harness-stderr.XXXXXX)
 dump=$(mktemp /private/tmp/deepseek-harness-dump.XXXXXX)
@@ -24,7 +25,7 @@ cleanup() {
   set +e
   stop_host >/dev/null 2>&1
   if [[ "$attached" == true ]]; then hdiutil detach "$mount_point" -force -quiet >/dev/null 2>&1 || true; fi
-  python3 - "$mount_point" "$fresh_home" "$conflict_home" "$stdout" "$stderr" "$dump" <<'PY_CLEAN'
+  python3 - "$mount_point" "$fresh_home" "$conflict_home" "$recovery_home" "$stdout" "$stderr" "$dump" <<'PY_CLEAN'
 from pathlib import Path
 import shutil
 import sys
@@ -141,12 +142,13 @@ node_bin="$mounted_app/Contents/Resources/node/bin"
 launcher="$mounted_app/Contents/Resources/runtime/lib/bin.js"
 market_patch="$mounted_app/Contents/Resources/desktop/market.patch.yml"
 market_conflict_patch="$mounted_app/Contents/Resources/desktop/market-conflict.patch.yml"
+recovery_script="$mounted_app/Contents/Resources/desktop/reset-web-profile.mjs"
 market_package="$mounted_app/Contents/Resources/runtime/node_modules/dshmarket-bundled/package.json"
 preset_root="$mounted_app/Contents/Resources/runtime/config/agent-presets"
 pnpm="$node_bin/pnpm"
 [[ -x "$pnpm" ]] || { echo "macOS verify: bundled pnpm launcher is missing" >&2; exit 1; }
 [[ $("$pnpm" --version) == "11.7.0" ]] || { echo "macOS verify: unexpected bundled pnpm version" >&2; exit 1; }
-[[ -f "$market_patch" && -f "$market_conflict_patch" && -f "$market_package" ]] || {
+[[ -f "$market_patch" && -f "$market_conflict_patch" && -f "$market_package" && -f "$recovery_script" ]] || {
   echo "macOS verify: bundled market resources are missing" >&2
   exit 1
 }
@@ -156,6 +158,36 @@ pnpm="$node_bin/pnpm"
   exit 1
 }
 "$node" "$desktop_dir/scripts/verify-agent-presets.mjs" "$preset_root"
+
+# The packaged recovery tool moves only the mutable Web profile and preserves user data.
+mkdir -p "$recovery_home/profiles/web" "$recovery_home/storages" "$recovery_home/.agent-presets/mine"
+printf '{"broken":true}\n' >"$recovery_home/profiles/web/package.json"
+printf 'kept: true\n' >"$recovery_home/settings.yaml"
+printf 'kept\n' >"$recovery_home/storages/sessions.json"
+printf 'kept\n' >"$recovery_home/.agent-presets/mine/agent.cordis.yml"
+recovery=$(env DSH_HOME="$recovery_home" "$node" "$recovery_script")
+RECOVERY="$recovery" RECOVERY_HOME="$recovery_home" python3 - <<'PY_RECOVERY'
+import json
+import os
+from pathlib import Path
+
+home = Path(os.environ["RECOVERY_HOME"])
+result = json.loads(os.environ["RECOVERY"])
+backup = Path(result["backup"])
+if result.get("changed") is not True or (home / "profiles" / "web").exists():
+    raise SystemExit(f"macOS verify: packaged recovery did not move the Web profile: {result}")
+if backup.parent != home / "profile-backups" or not (backup / "package.json").is_file():
+    raise SystemExit(f"macOS verify: packaged recovery backup is invalid: {result}")
+for path in [
+    home / "settings.yaml",
+    home / "storages" / "sessions.json",
+    home / ".agent-presets" / "mine" / "agent.cordis.yml",
+]:
+    if path.read_text(encoding="utf-8") != "kept\n" and path.name != "settings.yaml":
+        raise SystemExit(f"macOS verify: packaged recovery changed preserved data: {path}")
+if (home / "settings.yaml").read_text(encoding="utf-8") != "kept: true\n":
+    raise SystemExit("macOS verify: packaged recovery changed settings")
+PY_RECOVERY
 
 # A fresh profile receives exactly the packaged market.
 env DSH_HOME="$fresh_home" "$node" "$launcher" web --patch "$market_patch" --dump-config >"$dump"

@@ -38,6 +38,7 @@ private struct HarnessResources {
     let launcher: URL
     let marketPatch: URL
     let marketConflictPatch: URL
+    let recoveryScript: URL
 
     static func load() throws -> HarnessResources {
         guard let root = Bundle.main.resourceURL else { throw failure(1, "应用资源目录不可用。") }
@@ -46,7 +47,8 @@ private struct HarnessResources {
             node: root.appendingPathComponent("node/bin/node"),
             launcher: root.appendingPathComponent("runtime/lib/bin.js"),
             marketPatch: root.appendingPathComponent("desktop/market.patch.yml"),
-            marketConflictPatch: root.appendingPathComponent("desktop/market-conflict.patch.yml")
+            marketConflictPatch: root.appendingPathComponent("desktop/market-conflict.patch.yml"),
+            recoveryScript: root.appendingPathComponent("desktop/reset-web-profile.mjs")
         )
         guard FileManager.default.isExecutableFile(atPath: resources.node.path) else {
             throw failure(2, "内置 Node.js 运行时缺失。")
@@ -58,6 +60,9 @@ private struct HarnessResources {
             guard FileManager.default.fileExists(atPath: patch.path) else {
                 throw failure(4, "内置插件市场配置缺失。")
             }
+        }
+        guard FileManager.default.fileExists(atPath: resources.recoveryScript.path) else {
+            throw failure(7, "本地环境恢复工具缺失。")
         }
         return resources
     }
@@ -113,6 +118,36 @@ private func detectsLocalMarket(resources: HarnessResources) throws -> Bool {
         throw failure(6, "本地插件配置不是有效的 UTF-8 文本。")
     }
     return containsMarketEntry(config)
+}
+
+private struct ProfileRecoveryResult: Decodable {
+    let changed: Bool
+    let backup: String?
+}
+
+private func resetWebProfile(resources: HarnessResources) throws -> ProfileRecoveryResult {
+    let process = Process()
+    let output = Pipe()
+    let errors = Pipe()
+    process.executableURL = resources.node
+    process.arguments = [resources.recoveryScript.path]
+    process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+    process.environment = resources.environment()
+    process.standardOutput = output
+    process.standardError = errors
+    try process.run()
+    let outputData = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    let errorData = errors.fileHandleForReading.readDataToEndOfFile()
+    guard process.terminationStatus == 0 else {
+        let detail = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        throw failure(8, "无法备份并重置本地 Web profile。" + (detail.isEmpty ? "" : "\n\n\(detail)"))
+    }
+    do {
+        return try JSONDecoder().decode(ProfileRecoveryResult.self, from: outputData)
+    } catch {
+        throw failure(9, "本地环境恢复工具返回了无效结果。")
+    }
 }
 
 private final class HarnessProcess {
@@ -209,7 +244,8 @@ private extension NSLock {
 }
 
 private final class MainWindowController: NSWindowController, WKNavigationDelegate, WKUIDelegate {
-    private let harness = HarnessProcess()
+    private var harness = HarnessProcess()
+    private var resources: HarnessResources?
     private let container = NSView()
     private var webView: WKWebView?
     private var harnessOrigin: String?
@@ -228,33 +264,42 @@ private final class MainWindowController: NSWindowController, WKNavigationDelega
         super.init(window: window)
         window.contentView = container
         replaceContent(with: statusView(title: "正在启动 DeepSeek Harness…", detail: "首次启动可能需要几秒钟。", spinning: true))
-        harness.onReady = { [weak self] url in self?.open(url) }
-        harness.onExit = { [weak self] message in self?.showError(message) }
+        configureHarness()
     }
 
     required init?(coder: NSCoder) { nil }
 
     func start() {
         do {
-            let resources = try HarnessResources.load()
-            let hasLocalMarket = try detectsLocalMarket(resources: resources)
-            let mode: MarketLaunchMode
-            if hasLocalMarket {
-                guard let choice = chooseMarketSource() else {
-                    NSApp.terminate(nil)
-                    return
-                }
-                mode = choice
-            } else {
-                mode = .bundled
-            }
-            try harness.start(resources: resources, mode: mode)
+            let loaded = try HarnessResources.load()
+            resources = loaded
+            try startHarness(resources: loaded)
         } catch {
             showError(error.localizedDescription)
         }
     }
 
     func stop() { harness.stop() }
+
+    private func configureHarness() {
+        harness.onReady = { [weak self] url in self?.open(url) }
+        harness.onExit = { [weak self] message in self?.showError(message) }
+    }
+
+    private func startHarness(resources: HarnessResources) throws {
+        let hasLocalMarket = try detectsLocalMarket(resources: resources)
+        let mode: MarketLaunchMode
+        if hasLocalMarket {
+            guard let choice = chooseMarketSource() else {
+                NSApp.terminate(nil)
+                return
+            }
+            mode = choice
+        } else {
+            mode = .bundled
+        }
+        try harness.start(resources: resources, mode: mode)
+    }
 
     private func chooseMarketSource() -> MarketLaunchMode? {
         let alert = NSAlert()
@@ -288,7 +333,34 @@ private final class MainWindowController: NSWindowController, WKNavigationDelega
     }
 
     private func showError(_ message: String) {
-        replaceContent(with: statusView(title: "无法启动应用", detail: message, spinning: false))
+        let wrapper = statusView(title: "无法启动应用", detail: message, spinning: false)
+        let button = NSButton(title: "备份并重置 Web profile，然后重新打开", target: self, action: #selector(recoverWebProfile))
+        button.bezelStyle = .rounded
+        button.translatesAutoresizingMaskIntoConstraints = false
+        wrapper.addSubview(button)
+        NSLayoutConstraint.activate([
+            button.centerXAnchor.constraint(equalTo: wrapper.centerXAnchor),
+            button.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor, constant: 145),
+        ])
+        replaceContent(with: wrapper)
+    }
+
+    @objc private func recoverWebProfile() {
+        guard let resources else { return }
+        replaceContent(with: statusView(title: "正在恢复本地环境…", detail: "系统会先备份 Web profile；会话、设置、凭据和个人 preset 不受影响。", spinning: true))
+        harness.stop()
+        do {
+            let result = try resetWebProfile(resources: resources)
+            harnessOrigin = nil
+            webView = nil
+            harness = HarnessProcess()
+            configureHarness()
+            let detail = result.backup.map { "旧 Web profile 已备份到：\n\($0)" } ?? "未发现需要备份的 Web profile，正在重新启动。"
+            replaceContent(with: statusView(title: "正在重新启动 DeepSeek Harness…", detail: detail, spinning: true))
+            try startHarness(resources: resources)
+        } catch {
+            showError(error.localizedDescription)
+        }
     }
 
     private func statusView(title: String, detail: String, spinning: Bool) -> NSView {

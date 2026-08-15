@@ -145,7 +145,10 @@ function main(args: readonly string[]): void {
   if (command === 'show') {
     const [field] = rest
     if (rest.length !== 1 || (field !== 'version' && field !== 'bundle-version' && field !== 'build')) usage()
-    const value = field === 'bundle-version' ? formatVersion({ ...parseVersion(current.version), rc: undefined }) : current[field]
+    const parsed = parseVersion(current.version)
+    const value = field === 'bundle-version'
+      ? formatVersion({ major: parsed.major, minor: parsed.minor, patch: parsed.patch })
+      : current[field]
     process.stdout.write(`${String(value)}\n`)
     return
   }
