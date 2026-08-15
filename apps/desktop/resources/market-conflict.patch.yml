@@ -1,4 +1,4 @@
-# macOS distribution layer: disable the configured market for this run and load the packaged copy.
+# desktop distribution layer: disable the configured market for this run and load the packaged copy.
 - id: dsh-market
   disabled: true
 - insert:

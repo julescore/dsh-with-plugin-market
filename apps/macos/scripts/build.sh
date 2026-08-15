@@ -2,9 +2,10 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 app_dir="$root/apps/macos"
+desktop_dir="$root/apps/desktop"
 out_dir="$root/.artifacts/macos"
 cache_dir="$root/.artifacts/toolchains"
-app="$out_dir/DSH with Plugin Market.app"
+app="$out_dir/DeepSeek Harness.app"
 runtime="$out_dir/runtime"
 stage="$out_dir/dmg-stage"
 node_version=24.19.0
@@ -55,10 +56,10 @@ if [[ $(node --version) != "v${node_version}" ]]; then
   exit 1
 fi
 
-version=$(node --import tsx/esm "$app_dir/scripts/version.ts" show version)
-bundle_version=$(node --import tsx/esm "$app_dir/scripts/version.ts" show bundle-version)
-build_number=$(node --import tsx/esm "$app_dir/scripts/version.ts" show build)
-dmg="$out_dir/DSH-with-Plugin-Market-${version}-macos-arm64.dmg"
+version=$(node --import tsx/esm "$desktop_dir/scripts/version.ts" show version)
+bundle_version=$(node --import tsx/esm "$desktop_dir/scripts/version.ts" show bundle-version)
+build_number=$(node --import tsx/esm "$desktop_dir/scripts/version.ts" show build)
+dmg="$out_dir/DeepSeek-Harness-${version}-macos-arm64.dmg"
 
 corepack pnpm -C "$root" run build
 python3 - "$runtime" "$app" "$stage" "$dmg" <<'PY_CLEAN'
@@ -106,12 +107,12 @@ manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 PY_MARKET_DEPENDENCY
 
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/node/bin" "$app/Contents/Resources/runtime" \
-  "$app/Contents/Resources/pnpm" "$app/Contents/Resources/macos"
+  "$app/Contents/Resources/pnpm" "$app/Contents/Resources/desktop"
 swiftc -parse-as-library -O -whole-module-optimization \
   -target arm64-apple-macos15.0 \
   -framework Cocoa -framework WebKit \
   "$app_dir/src/main.swift" \
-  -o "$app/Contents/MacOS/DSH with Plugin Market"
+  -o "$app/Contents/MacOS/DeepSeek Harness"
 cp "$app_dir/resources/Info.plist" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $bundle_version" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" "$app/Contents/Info.plist"
@@ -125,15 +126,15 @@ bin_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 exec "$bin_dir/node" "$bin_dir/../../pnpm/bin/pnpm.cjs" "$@"
 PNPM_LAUNCHER
 chmod 755 "$app/Contents/Resources/node/bin/pnpm"
-cp "$app_dir/resources/market.patch.yml" "$app/Contents/Resources/macos/market.patch.yml"
-cp "$app_dir/resources/market-conflict.patch.yml" "$app/Contents/Resources/macos/market-conflict.patch.yml"
+cp "$desktop_dir/resources/market.patch.yml" "$app/Contents/Resources/desktop/market.patch.yml"
+cp "$desktop_dir/resources/market-conflict.patch.yml" "$app/Contents/Resources/desktop/market-conflict.patch.yml"
 cp "$app_dir/resources/THIRD-PARTY-NOTICES.md" "$app/Contents/Resources/THIRD-PARTY-NOTICES.md"
 cp -R "$runtime"/. "$app/Contents/Resources/runtime/"
 mkdir -p "$app/Contents/Resources/runtime/node_modules/dshmarket-bundled"
 cp -R "$market_root"/. "$app/Contents/Resources/runtime/node_modules/dshmarket-bundled/"
-python3 "$app_dir/scripts/patch-market.py" \
+python3 "$desktop_dir/scripts/patch-market.py" \
   "$app/Contents/Resources/runtime/node_modules/dshmarket-bundled" \
-  "$app_dir/resources/market-overrides.json"
+  "$desktop_dir/resources/market-overrides.json"
 node --check "$app/Contents/Resources/runtime/node_modules/dshmarket-bundled/lib/registry.js"
 node --check "$app/Contents/Resources/runtime/node_modules/dshmarket-bundled/lib/routes.js"
 node --check "$app/Contents/Resources/runtime/node_modules/dshmarket-bundled/client/client.js"
@@ -288,7 +289,7 @@ codesign --verify --deep --strict "$app"
 mkdir -p "$stage"
 cp -R "$app" "$stage/"
 ln -s /Applications "$stage/Applications"
-hdiutil create -quiet -volname "DSH with Plugin Market" -srcfolder "$stage" -ov -format UDZO "$dmg"
+hdiutil create -quiet -volname "DeepSeek Harness" -srcfolder "$stage" -ov -format UDZO "$dmg"
 hdiutil verify "$dmg" >/dev/null
 sha256=$(shasum -a 256 "$dmg" | awk '{print $1}')
 printf 'VERSION=%s\nBUNDLE_VERSION=%s\nBUILD=%s\nAPP=%s\nDMG=%s\nSHA256=%s\n' \

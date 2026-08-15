@@ -2,7 +2,7 @@ import Cocoa
 import Darwin
 import WebKit
 
-private let appName = "DSH with Plugin Market"
+private let appName = "DeepSeek Harness"
 private let readinessPrefix = "dsh web: "
 private let marketEntryID = "dsh-market"
 
@@ -45,8 +45,8 @@ private struct HarnessResources {
             root: root,
             node: root.appendingPathComponent("node/bin/node"),
             launcher: root.appendingPathComponent("runtime/lib/bin.js"),
-            marketPatch: root.appendingPathComponent("macos/market.patch.yml"),
-            marketConflictPatch: root.appendingPathComponent("macos/market-conflict.patch.yml")
+            marketPatch: root.appendingPathComponent("desktop/market.patch.yml"),
+            marketConflictPatch: root.appendingPathComponent("desktop/market-conflict.patch.yml")
         )
         guard FileManager.default.isExecutableFile(atPath: resources.node.path) else {
             throw failure(2, "内置 Node.js 运行时缺失。")
@@ -227,7 +227,7 @@ private final class MainWindowController: NSWindowController, WKNavigationDelega
         window.center()
         super.init(window: window)
         window.contentView = container
-        replaceContent(with: statusView(title: "正在启动 DSH with Plugin Market…", detail: "首次启动可能需要几秒钟。", spinning: true))
+        replaceContent(with: statusView(title: "正在启动 DeepSeek Harness…", detail: "首次启动可能需要几秒钟。", spinning: true))
         harness.onReady = { [weak self] url in self?.open(url) }
         harness.onExit = { [weak self] message in self?.showError(message) }
     }

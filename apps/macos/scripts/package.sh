@@ -2,10 +2,11 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 app_dir="$root/apps/macos"
+desktop_dir="$root/apps/desktop"
 out_dir="$root/.artifacts/macos"
-app="$out_dir/DSH with Plugin Market.app"
+app="$out_dir/DeepSeek Harness.app"
 stage="$out_dir/dmg-stage"
-version_file="$app_dir/version.json"
+version_file="$desktop_dir/version.json"
 backup=$(mktemp)
 cp "$version_file" "$backup"
 succeeded=false
@@ -37,9 +38,9 @@ PY_BACKUP
 }
 trap cleanup EXIT
 
-node --import tsx/esm "$app_dir/scripts/version.ts" bump "$@"
-version=$(node --import tsx/esm "$app_dir/scripts/version.ts" show version)
-dmg="$out_dir/DSH-with-Plugin-Market-${version}-macos-arm64.dmg"
+node --import tsx/esm "$desktop_dir/scripts/version.ts" bump "$@"
+version=$(node --import tsx/esm "$desktop_dir/scripts/version.ts" show version)
+dmg="$out_dir/DeepSeek-Harness-${version}-macos-arm64.dmg"
 build_started=true
 bash "$app_dir/scripts/build.sh"
 bash "$app_dir/scripts/verify.sh"

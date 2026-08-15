@@ -1,6 +1,6 @@
 # macOS bundled tool notices
 
-The DSH with Plugin Market macOS application includes the following distribution-specific components in addition to the workspace production dependency closure.
+The DeepSeek Harness macOS application includes the following distribution-specific components in addition to the workspace production dependency closure.
 
 ## dshmarket 1.2.3
 

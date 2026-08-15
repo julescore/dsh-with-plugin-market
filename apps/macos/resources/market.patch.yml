@@ -1,4 +1,0 @@
-# macOS distribution layer: add the packaged market when the profile has no market row.
-- insert:
-    - id: dsh-market
-      name: dshmarket-bundled

@@ -1,13 +1,13 @@
-/** Reads, validates, and advances the independent macOS application version. */
+/** Reads, validates, and advances the shared desktop application version. */
 
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-/** Version changes supported by the macOS packaging command. */
-export type MacOSVersionBump = 'rc' | 'release' | 'patch' | 'minor' | 'major'
+/** Version changes supported by the desktop packaging command. */
+export type DesktopVersionBump = 'rc' | 'release' | 'patch' | 'minor' | 'major'
 
-/** Persisted macOS marketing and monotonically increasing build versions. */
-export interface MacOSVersionManifest {
+/** Persisted desktop marketing and monotonically increasing build versions. */
+export interface DesktopVersionManifest {
   readonly version: string
   readonly build: number
 }
@@ -25,7 +25,7 @@ const manifestPath = fileURLToPath(new URL('../version.json', import.meta.url))
 function parseVersion(value: string): ParsedVersion {
   const match = VERSION_PATTERN.exec(value)
   if (match === null) {
-    throw new Error(`macOS version must be X.Y.Z or X.Y.Z-rc.N, got ${JSON.stringify(value)}`)
+    throw new Error(`desktop version must be X.Y.Z or X.Y.Z-rc.N, got ${JSON.stringify(value)}`)
   }
   const [, major, minor, patch, rc] = match
   return {
@@ -51,33 +51,33 @@ function compareVersions(left: ParsedVersion, right: ParsedVersion): number {
 }
 
 /**
- * Validate a decoded macOS version manifest.
+ * Validate a decoded desktop version manifest.
  * @param input - JSON-decoded manifest value.
  * @returns The validated version and build number.
  */
-export function parseMacOSVersionManifest(input: unknown): MacOSVersionManifest {
+export function parseDesktopVersionManifest(input: unknown): DesktopVersionManifest {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-    throw new Error('macOS version manifest must be an object')
+    throw new Error('desktop version manifest must be an object')
   }
   const candidate = input as Record<string, unknown>
-  if (typeof candidate.version !== 'string') throw new Error('macOS version manifest.version must be a string')
+  if (typeof candidate.version !== 'string') throw new Error('desktop version manifest.version must be a string')
   parseVersion(candidate.version)
   if (!Number.isSafeInteger(candidate.build) || (candidate.build as number) < 1) {
-    throw new Error('macOS version manifest.build must be a positive safe integer')
+    throw new Error('desktop version manifest.build must be a positive safe integer')
   }
   return { version: candidate.version, build: candidate.build as number }
 }
 
 /**
- * Compute a conventional next macOS version and increment the build number.
- * @param current - Current macOS version manifest.
+ * Compute a conventional next desktop version and increment the build number.
+ * @param current - Current desktop version manifest.
  * @param bump - Requested release transition.
  * @returns The next manifest.
  */
-export function bumpMacOSVersion(
-  current: MacOSVersionManifest,
-  bump: MacOSVersionBump,
-): MacOSVersionManifest {
+export function bumpDesktopVersion(
+  current: DesktopVersionManifest,
+  bump: DesktopVersionBump,
+): DesktopVersionManifest {
   const parsed = parseVersion(current.version)
   let next: ParsedVersion
   switch (bump) {
@@ -87,7 +87,7 @@ export function bumpMacOSVersion(
         : { ...parsed, rc: parsed.rc + 1 }
       break
     case 'release':
-      if (parsed.rc === undefined) throw new Error(`macOS version ${current.version} is already stable`)
+      if (parsed.rc === undefined) throw new Error(`desktop version ${current.version} is already stable`)
       next = { major: parsed.major, minor: parsed.minor, patch: parsed.patch }
       break
     case 'patch':
@@ -106,32 +106,32 @@ export function bumpMacOSVersion(
 }
 
 /**
- * Set an explicit higher macOS version and increment the build number.
- * @param current - Current macOS version manifest.
+ * Set an explicit higher desktop version and increment the build number.
+ * @param current - Current desktop version manifest.
  * @param target - Explicit target marketing version.
  * @returns The next manifest.
  */
-export function setMacOSVersion(
-  current: MacOSVersionManifest,
+export function setDesktopVersion(
+  current: DesktopVersionManifest,
   target: string,
-): MacOSVersionManifest {
+): DesktopVersionManifest {
   const parsedCurrent = parseVersion(current.version)
   const parsedTarget = parseVersion(target)
   if (compareVersions(parsedTarget, parsedCurrent) <= 0) {
-    throw new Error(`macOS target version ${target} must be greater than ${current.version}`)
+    throw new Error(`desktop target version ${target} must be greater than ${current.version}`)
   }
   return { version: formatVersion(parsedTarget), build: current.build + 1 }
 }
 
 function assertNever(value: never): never {
-  throw new Error(`unsupported macOS version bump: ${String(value)}`)
+  throw new Error(`unsupported desktop version bump: ${String(value)}`)
 }
 
-function readManifest(): MacOSVersionManifest {
-  return parseMacOSVersionManifest(JSON.parse(readFileSync(manifestPath, 'utf8')) as unknown)
+function readManifest(): DesktopVersionManifest {
+  return parseDesktopVersionManifest(JSON.parse(readFileSync(manifestPath, 'utf8')) as unknown)
 }
 
-function writeManifest(manifest: MacOSVersionManifest): void {
+function writeManifest(manifest: DesktopVersionManifest): void {
   writeFileSync(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`)
 }
 
@@ -151,19 +151,19 @@ function main(args: readonly string[]): void {
   }
   if (command !== 'bump') usage()
 
-  let next: MacOSVersionManifest
+  let next: DesktopVersionManifest
   if (rest.length === 0) {
-    next = bumpMacOSVersion(current, 'rc')
+    next = bumpDesktopVersion(current, 'rc')
   } else if (rest.length === 2 && rest[0] === '--bump'
     && ['rc', 'release', 'patch', 'minor', 'major'].includes(rest[1] ?? '')) {
-    next = bumpMacOSVersion(current, rest[1] as MacOSVersionBump)
+    next = bumpDesktopVersion(current, rest[1] as DesktopVersionBump)
   } else if (rest.length === 2 && rest[0] === '--version' && rest[1] !== undefined) {
-    next = setMacOSVersion(current, rest[1])
+    next = setDesktopVersion(current, rest[1])
   } else {
     usage()
   }
   writeManifest(next)
-  process.stdout.write(`macOS version: ${current.version} (${current.build}) -> ${next.version} (${next.build})\n`)
+  process.stdout.write(`desktop version: ${current.version} (${current.build}) -> ${next.version} (${next.build})\n`)
 }
 
 const invoked = process.argv[1]

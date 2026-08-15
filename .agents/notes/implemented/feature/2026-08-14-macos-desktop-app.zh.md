@@ -24,13 +24,13 @@ DeepSeek Harness 可以从终端运行并提供 Web 客户端，但 macOS 用户
 
 **外壳负责 Host 生命周期。** 应用终止时先向子进程发送 `SIGTERM`，六秒后仍未退出则升级为 `SIGKILL`。启动失败或子进程意外退出时，加载界面会替换为错误信息，而不是留下无响应的 Web 视图。
 
-**社区发行版使用独立产品标识。** 应用、DMG、仓库与 Release 产物统一使用 `DSH with Plugin Market`，bundle identifier 为 `io.github.julescore.dsh-with-plugin-market`。上游 `@deepseek-ai/*` 包名与产品内部组合保持不变，使官方源码更新仍可合并。
+**发行版保留上游产品标识。** 按照[跨平台标识决策](2026-08-15-cross-platform-desktop-distribution.md)的后续修订，仓库名是 `dsh-with-plugin-market`，应用和 DMG 使用 `DeepSeek Harness`；`io.github.julescore.dsh-with-plugin-market` bundle identifier 用于记录发行方。上游 `@deepseek-ai/*` 包名与产品内部组合保持不变，使官方源码更新仍可合并。
 
-**GitHub 自动化负责构建发行版并提出上游同步。** 桌面工作流在原生 runner 上构建并验证 macOS arm64 产物，只有版本匹配的 `desktop-v*` 标签才会发布 Release。每周同步工作流会将官方 `deepseek-ai/deepseek-harness` 的 `master` 合并到专用分支并创建 PR，绝不直接把上游更新写入发行分支。
+**GitHub 自动化负责构建发行版并提出上游同步。** 桌面工作流在原生 runner 上构建并验证 macOS arm64 与 Windows x64 产物，只有两个平台都成功且版本匹配 `desktop-v*` 标签时才会发布 Release。每周同步工作流会将官方 `deepseek-ai/deepseek-harness` 的 `master` 合并到专用分支并创建 PR，绝不直接把上游更新写入发行分支。
 
 **仓库构建生成本地安装产物。** `pnpm run build:macos` 在 `.artifacts/macos` 下创建 arm64 `.app` 和带版本号的压缩 DMG，并应用和验证 ad-hoc 签名。Developer ID 签名与 Apple 公证仍属于外部发布操作，因为仓库不持有分发凭据。
 
-**应用拥有独立的发布版本。** `apps/macos/version.json` 是发布版本与单调递增 Apple 构建号的唯一来源；根工作区包版本不控制桌面应用发布。RC 后缀保留在 DMG 名称中，`CFBundleShortVersionString` 使用稳定的三段版本，`CFBundleVersion` 使用整数构建号。
+**桌面发行版拥有独立的共享发布版本。** `apps/desktop/version.json` 是 macOS 与 Windows 发布版本和单调递增构建号的唯一来源；根工作区包版本不控制桌面应用发布。RC 后缀保留在 DMG 名称中，`CFBundleShortVersionString` 使用稳定的三段版本，`CFBundleVersion` 使用整数构建号。
 
 **正式打包以事务方式提升并验证版本。** `pnpm run package:macos` 默认提升候选版本，再构建应用，并使用隔离的临时 `DSH_HOME` 验证挂载后的 DMG。流程也支持明确指定稳定发布、语义化版本和目标版本。只有全部步骤成功后才保留新 manifest；失败时恢复此前的文件字节并删除不完整产物，同时保留旧版本 DMG。
 

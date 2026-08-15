@@ -2,18 +2,19 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../../.." && pwd)
 app_dir="$root/apps/macos"
+desktop_dir="$root/apps/desktop"
 out_dir="$root/.artifacts/macos"
-version=$(node --import tsx/esm "$app_dir/scripts/version.ts" show version)
-bundle_version=$(node --import tsx/esm "$app_dir/scripts/version.ts" show bundle-version)
-build_number=$(node --import tsx/esm "$app_dir/scripts/version.ts" show build)
-dmg="$out_dir/DSH-with-Plugin-Market-${version}-macos-arm64.dmg"
+version=$(node --import tsx/esm "$desktop_dir/scripts/version.ts" show version)
+bundle_version=$(node --import tsx/esm "$desktop_dir/scripts/version.ts" show bundle-version)
+build_number=$(node --import tsx/esm "$desktop_dir/scripts/version.ts" show build)
+dmg="$out_dir/DeepSeek-Harness-${version}-macos-arm64.dmg"
 mount_point=$(mktemp -d /private/tmp/deepseek-harness-macos.XXXXXX)
 fresh_home=$(mktemp -d /private/tmp/deepseek-harness-fresh-home.XXXXXX)
 conflict_home=$(mktemp -d /private/tmp/deepseek-harness-conflict-home.XXXXXX)
 stdout=$(mktemp /private/tmp/deepseek-harness-stdout.XXXXXX)
 stderr=$(mktemp /private/tmp/deepseek-harness-stderr.XXXXXX)
 dump=$(mktemp /private/tmp/deepseek-harness-dump.XXXXXX)
-mounted_app="$mount_point/DSH with Plugin Market.app"
+mounted_app="$mount_point/DeepSeek Harness.app"
 pid=""
 port=""
 url=""
@@ -127,6 +128,9 @@ hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount_point" -quiet
 attached=true
 [[ -d "$mounted_app" ]] || { echo "macOS verify: mounted application is missing" >&2; exit 1; }
 plutil -lint "$mounted_app/Contents/Info.plist" >/dev/null
+[[ $(plutil -extract CFBundleDisplayName raw "$mounted_app/Contents/Info.plist") == "DeepSeek Harness" ]]
+[[ $(plutil -extract CFBundleName raw "$mounted_app/Contents/Info.plist") == "DeepSeek Harness" ]]
+[[ $(plutil -extract CFBundleExecutable raw "$mounted_app/Contents/Info.plist") == "DeepSeek Harness" ]]
 [[ $(plutil -extract CFBundleShortVersionString raw "$mounted_app/Contents/Info.plist") == "$bundle_version" ]]
 [[ $(plutil -extract CFBundleVersion raw "$mounted_app/Contents/Info.plist") == "$build_number" ]]
 codesign --verify --deep --strict "$mounted_app"
@@ -135,8 +139,8 @@ codesign --verify --deep --strict "$mounted_app"
 node="$mounted_app/Contents/Resources/node/bin/node"
 node_bin="$mounted_app/Contents/Resources/node/bin"
 launcher="$mounted_app/Contents/Resources/runtime/lib/bin.js"
-market_patch="$mounted_app/Contents/Resources/macos/market.patch.yml"
-market_conflict_patch="$mounted_app/Contents/Resources/macos/market-conflict.patch.yml"
+market_patch="$mounted_app/Contents/Resources/desktop/market.patch.yml"
+market_conflict_patch="$mounted_app/Contents/Resources/desktop/market-conflict.patch.yml"
 market_package="$mounted_app/Contents/Resources/runtime/node_modules/dshmarket-bundled/package.json"
 pnpm="$node_bin/pnpm"
 [[ -x "$pnpm" ]] || { echo "macOS verify: bundled pnpm launcher is missing" >&2; exit 1; }

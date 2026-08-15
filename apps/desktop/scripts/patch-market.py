@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply macOS-distribution-only aliases and curated market policies."""
+"""Apply desktop-distribution-only aliases and curated market policies."""
 
 from pathlib import Path
 import json
@@ -10,7 +10,7 @@ def replace_once(path: Path, old: str, new: str, label: str) -> None:
     """Replace one version-pinned upstream fragment or stop the build."""
     text = path.read_text()
     if text.count(old) != 1:
-        raise SystemExit(f"macOS build: bundled market {label} is unexpected")
+        raise SystemExit(f"desktop build: bundled market {label} is unexpected")
     path.write_text(text.replace(old, new, 1))
 
 
@@ -18,7 +18,7 @@ package_dir = Path(sys.argv[1])
 overrides_source = Path(sys.argv[2])
 overrides = json.loads(overrides_source.read_text())
 if not isinstance(overrides, dict) or len(overrides) != 1:
-    raise SystemExit("macOS build: market overrides must contain exactly one repository")
+    raise SystemExit("desktop build: market overrides must contain exactly one repository")
 url, override = next(iter(overrides.items()))
 source_urls = [
     "https://github.com/zhu1090093659/dsh-web-ui",
@@ -31,12 +31,12 @@ expected = {
     "denyBuilds": ["cloudflared", "cpu-features", "ssh2"],
 }
 if url != source_urls[0] or override != expected:
-    raise SystemExit("macOS build: dsh-web-ui market override is unexpected")
+    raise SystemExit("desktop build: dsh-web-ui market override is unexpected")
 
 manifest_path = package_dir / "package.json"
 manifest = json.loads(manifest_path.read_text())
 if manifest.get("name") != "dshmarket" or manifest.get("version") != "1.2.3":
-    raise SystemExit("macOS build: bundled market must be unmodified dshmarket@1.2.3")
+    raise SystemExit("desktop build: bundled market must be unmodified dshmarket@1.2.3")
 manifest["name"] = "dshmarket-bundled"
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 
@@ -66,7 +66,7 @@ function normalizeSourceUrl(url: string): string {
   return url.toLowerCase().replace(/\\/+$/, '')
 }
 
-/** Return the macOS distribution policy for one approved repository URL. */
+/** Return the desktop distribution policy for one approved repository URL. */
 export function distributionOverride(url: string): DistributionOverride | undefined {
   const expected = normalizeSourceUrl(url)
   return Object.values(distributionOverrides).find(rule =>
@@ -108,7 +108,7 @@ const distributionOverrides = JSON.parse(readFileSync(overridesPath, 'utf8'));
 function normalizeSourceUrl(url) {
     return url.toLowerCase().replace(/\\/+$/, '');
 }
-/** Return the macOS distribution policy for one approved repository URL. */
+/** Return the desktop distribution policy for one approved repository URL. */
 export function distributionOverride(url) {
     const expected = normalizeSourceUrl(url);
     return Object.values(distributionOverrides).find(rule => rule.sourceUrls.some(candidate => normalizeSourceUrl(candidate) === expected));
@@ -163,7 +163,7 @@ export interface DistributionOverride {
     install: string;
     denyBuilds: string[];
 }
-/** Return the macOS distribution policy for one approved repository URL. */
+/** Return the desktop distribution policy for one approved repository URL. */
 export declare function distributionOverride(url: string): DistributionOverride | undefined;
 """,
     "registry declarations",
