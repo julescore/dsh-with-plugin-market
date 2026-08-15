@@ -7,13 +7,14 @@ $outDir = Join-Path $root '.artifacts/windows'
 $version = node --import tsx/esm (Join-Path $desktopDir 'scripts/version.ts') show version
 $buildNumber = node --import tsx/esm (Join-Path $desktopDir 'scripts/version.ts') show build
 $installer = Join-Path $outDir "DeepSeek-Harness-$version-windows-x64-setup.exe"
-$testRoot = Join-Path $env:RUNNER_TEMP "deepseek-harness-windows-$([Guid]::NewGuid())"
-$installDir = Join-Path $testRoot 'install'
-$freshHome = Join-Path $testRoot 'fresh-home'
-$conflictHome = Join-Path $testRoot 'conflict-home'
+$testRoot = Join-Path $env:RUNNER_TEMP 'dsh-test'
+$installDir = Join-Path $testRoot 'i'
+$freshHome = Join-Path $testRoot 'fresh'
+$conflictHome = Join-Path $testRoot 'conflict'
 $selfTest = Join-Path $testRoot 'self-test.json'
 $stdout = Join-Path $testRoot 'stdout.log'
 $stderr = Join-Path $testRoot 'stderr.log'
+$installerLog = Join-Path $testRoot 'installer.log'
 $hostProcess = $null
 
 function Stop-Host {
@@ -68,8 +69,11 @@ function Invoke-MarketJson([string]$Method, [string]$Url, [hashtable]$Body = @{}
 try {
     if (-not (Test-Path $installer)) { throw "Windows verify: missing $installer" }
     New-Item -ItemType Directory -Force -Path $testRoot, $installDir, $freshHome, $conflictHome | Out-Null
-    $install = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=$installDir") -PassThru -Wait
-    if ($install.ExitCode -ne 0) { throw "Windows verify: installer exited with $($install.ExitCode)" }
+    $install = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=$installDir", "/LOG=$installerLog") -PassThru -Wait
+    if ($install.ExitCode -ne 0) {
+        $detail = if (Test-Path $installerLog) { Get-Content -Raw $installerLog } else { 'installer log was not created' }
+        throw "Windows verify: installer exited with $($install.ExitCode)`n$detail"
+    }
 
     $app = Join-Path $installDir 'DeepSeek Harness.exe'
     $node = Join-Path $installDir 'node/node.exe'
