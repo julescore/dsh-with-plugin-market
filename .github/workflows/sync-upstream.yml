@@ -1,0 +1,58 @@
+name: Sync Upstream
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 2 * * 1'
+
+concurrency:
+  group: sync-upstream-master
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Merge official master into sync branch
+        env:
+          UPSTREAM_URL: https://github.com/deepseek-ai/deepseek-harness.git
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git remote add upstream "$UPSTREAM_URL"
+          git fetch upstream master
+          git switch -C sync/upstream-master origin/main
+          git merge --no-edit upstream/master
+          if git diff --quiet origin/main...HEAD; then
+            echo "No upstream changes."
+            echo "changed=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          git push --force-with-lease origin HEAD:sync/upstream-master
+          echo "changed=true" >> "$GITHUB_ENV"
+
+      - name: Open or reuse sync pull request
+        if: env.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh pr view sync/upstream-master --json url --jq .url >/dev/null 2>&1; then
+            gh pr view sync/upstream-master --json url --jq .url
+          else
+            gh pr create \
+              --base main \
+              --head sync/upstream-master \
+              --title "sync: merge upstream DeepSeek Harness" \
+              --body "Automated weekly merge of deepseek-ai/deepseek-harness master. Review conflicts and require Desktop Build before merging."
+          fi

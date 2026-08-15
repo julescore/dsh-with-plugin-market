@@ -1,0 +1,123 @@
+name: Desktop Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags:
+      - 'desktop-v*'
+    paths:
+      - '.github/workflows/desktop-build.yml'
+      - 'apps/macos/**'
+      - 'apps/cli/**'
+      - 'packages/**'
+      - 'vendor/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig*.json'
+      - 'tsdown.config.ts'
+  pull_request:
+    paths:
+      - '.github/workflows/desktop-build.yml'
+      - 'apps/macos/**'
+      - 'apps/cli/**'
+      - 'packages/**'
+      - 'vendor/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig*.json'
+      - 'tsdown.config.ts'
+
+concurrency:
+  group: desktop-build-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+env:
+  DSH_TELEMETRY_DISABLED: '1'
+
+jobs:
+  macos_arm64:
+    name: macOS arm64
+    runs-on: macos-latest
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.artifact.outputs.version }}
+      artifact: ${{ steps.artifact.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Require Apple Silicon runner
+        run: test "$(uname -m)" = arm64
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check tag version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version=$(node --import tsx/esm apps/macos/scripts/version.ts show version)
+          test "$TAG" = "desktop-v$version"
+
+      - name: Build and verify DMG
+        run: |
+          pnpm run build:macos
+          pnpm run verify:macos
+
+      - name: Resolve artifact
+        id: artifact
+        run: |
+          set -euo pipefail
+          version=$(node --import tsx/esm apps/macos/scripts/version.ts show version)
+          artifact="DSH-with-Plugin-Market-${version}-macos-arm64"
+          dmg=".artifacts/macos/${artifact}.dmg"
+          test -f "$dmg"
+          sha256=$(shasum -a 256 "$dmg" | awk '{print $1}')
+          printf '%s  %s\n' "$sha256" "$(basename "$dmg")" > "$dmg.sha256"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.artifact.outputs.artifact }}
+          path: |
+            .artifacts/macos/${{ steps.artifact.outputs.artifact }}.dmg
+            .artifacts/macos/${{ steps.artifact.outputs.artifact }}.dmg.sha256
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: macos_arm64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.macos_arm64.outputs.artifact }}
+          path: release
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${{ github.ref_name }}"
+          release/*
+          --repo "${{ github.repository }}"
+          --title "DSH with Plugin Market ${{ needs.macos_arm64.outputs.version }}"
+          --generate-notes

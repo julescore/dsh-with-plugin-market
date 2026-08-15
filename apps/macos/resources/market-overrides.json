@@ -1,0 +1,15 @@
+{
+  "https://github.com/zhu1090093659/dsh-web-ui": {
+    "sourceUrls": [
+      "https://github.com/zhu1090093659/dsh-web-ui",
+      "https://github.com/zhu1090093659/dsh-web-ui/tree/main/packages/dsh-web-ui-all"
+    ],
+    "npm": "@linxin666/dsh-web-ui-all",
+    "install": "dsh plugin --profile web add @linxin666/dsh-web-ui-all",
+    "denyBuilds": [
+      "cloudflared",
+      "cpu-features",
+      "ssh2"
+    ]
+  }
+}
