@@ -105,6 +105,8 @@ dependencies.pop("dshmarket", None)
 dependencies["dshmarket-bundled"] = expected
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 PY_MARKET_DEPENDENCY
+python3 "$desktop_dir/scripts/install-agent-presets.py" "$runtime" "$desktop_dir" macOS
+node "$desktop_dir/scripts/verify-agent-presets.mjs" "$runtime/config/agent-presets"
 
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/node/bin" "$app/Contents/Resources/runtime" \
   "$app/Contents/Resources/pnpm" "$app/Contents/Resources/desktop"

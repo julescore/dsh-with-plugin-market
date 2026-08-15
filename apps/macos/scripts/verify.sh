@@ -142,6 +142,7 @@ launcher="$mounted_app/Contents/Resources/runtime/lib/bin.js"
 market_patch="$mounted_app/Contents/Resources/desktop/market.patch.yml"
 market_conflict_patch="$mounted_app/Contents/Resources/desktop/market-conflict.patch.yml"
 market_package="$mounted_app/Contents/Resources/runtime/node_modules/dshmarket-bundled/package.json"
+preset_root="$mounted_app/Contents/Resources/runtime/config/agent-presets"
 pnpm="$node_bin/pnpm"
 [[ -x "$pnpm" ]] || { echo "macOS verify: bundled pnpm launcher is missing" >&2; exit 1; }
 [[ $("$pnpm" --version) == "11.7.0" ]] || { echo "macOS verify: unexpected bundled pnpm version" >&2; exit 1; }
@@ -154,12 +155,53 @@ pnpm="$node_bin/pnpm"
   echo "macOS verify: unexpected bundled market version" >&2
   exit 1
 }
+"$node" "$desktop_dir/scripts/verify-agent-presets.mjs" "$preset_root"
 
 # A fresh profile receives exactly the packaged market.
 env DSH_HOME="$fresh_home" "$node" "$launcher" web --patch "$market_patch" --dump-config >"$dump"
 [[ $(grep -c '^- id: dsh-market$' "$dump") == 1 ]]
 [[ $(grep -c '^  name: dshmarket-bundled$' "$dump") == 1 ]]
 start_host "$fresh_home" --patch "$market_patch"
+preset_list=$(curl --fail --silent --show-error --max-time 30 \
+  -H "Content-Type: application/json" \
+  -H "Origin: $url" \
+  --data '{"type":"client-request","rpcId":"desktop-preset-list","method":"agentPreset.list","payload":{}}' \
+  "$url/api/agentPreset.list")
+PRESET_LIST="$preset_list" python3 - <<'PY_PRESET_LIST'
+import json
+import os
+payload = json.loads(os.environ["PRESET_LIST"])
+result = payload.get("result", {})
+if result.get("ok") is not True:
+    raise SystemExit(f"macOS verify: agent preset list failed: {payload}")
+entries = {item.get("id"): item for item in result.get("value", {}).get("presets", [])}
+expected = {
+    "anchored-standard": "Anchored Standard (experimental)",
+    "zero-anchored-standard": "Zero-Anchored Standard (experimental)",
+}
+for preset_id, name in expected.items():
+    entry = entries.get(preset_id)
+    if entry is None or entry.get("name") != name or entry.get("trust") != "system" or entry.get("broken") is not None:
+        raise SystemExit(f"macOS verify: packaged preset is not selectable: {preset_id}: {entry}")
+if entries.get("standard", {}).get("isDefault") is not True:
+    raise SystemExit("macOS verify: bundled community presets changed the default preset")
+PY_PRESET_LIST
+for preset_id in anchored-standard zero-anchored-standard; do
+  create=$(curl --fail --silent --show-error --max-time 30 \
+    -H "Content-Type: application/json" \
+    -H "Origin: $url" \
+    --data "{\"type\":\"client-request\",\"rpcId\":\"desktop-create-$preset_id\",\"method\":\"session.create\",\"payload\":{\"sessionId\":\"desktop-$preset_id\",\"agentPreset\":\"$preset_id\"}}" \
+    "$url/api/session.create")
+  CREATE="$create" PRESET_ID="$preset_id" python3 - <<'PY_PRESET_CREATE'
+import json
+import os
+payload = json.loads(os.environ["CREATE"])
+result = payload.get("result", {})
+value = result.get("value", {})
+if result.get("ok") is not True or value.get("agentPreset") != os.environ["PRESET_ID"]:
+    raise SystemExit(f"macOS verify: packaged preset mount failed: {payload}")
+PY_PRESET_CREATE
+done
 registry=$(assert_market_client "dshmarket-bundled" "dshmarket")
 REGISTRY="$registry" python3 - <<'PY_REGISTRY'
 import json
@@ -317,5 +359,5 @@ PY_MARKET_VERSION
 stop_host
 
 sha256=$(shasum -a 256 "$dmg" | awk '{print $1}')
-printf 'macOS verification passed\nVERSION=%s\nBUNDLE_VERSION=%s\nBUILD=%s\nMARKET=dshmarket@1.2.3\nMARKET_DSH_WEB_UI=@linxin666/dsh-web-ui-all\nMARKET_DENIED_BUILDS=cloudflared,cpu-features,ssh2\nMARKET_CONFLICT_CHOICES=local,bundled\nMARKET_FIRST_CLICK_UPDATE=1.1.0-to-%s\nPNPM=11.7.0\nDMG=%s\nSHA256=%s\n' \
+printf 'macOS verification passed\nVERSION=%s\nBUNDLE_VERSION=%s\nBUILD=%s\nMARKET=dshmarket@1.2.3\nMARKET_DSH_WEB_UI=@linxin666/dsh-web-ui-all\nPRESETS=anchored-standard,zero-anchored-standard\nMARKET_DENIED_BUILDS=cloudflared,cpu-features,ssh2\nMARKET_CONFLICT_CHOICES=local,bundled\nMARKET_FIRST_CLICK_UPDATE=1.1.0-to-%s\nPNPM=11.7.0\nDMG=%s\nSHA256=%s\n' \
   "$version" "$bundle_version" "$build_number" "$market_updated_version" "$dmg" "$sha256"

@@ -52,6 +52,17 @@ function Start-Host([string]$DshHome, [string[]]$ExtraArguments) {
     return $url
 }
 
+function Invoke-RpcJson([string]$BaseUrl, [string]$Method, [hashtable]$Payload, [string]$RpcId) {
+    $body = @{
+        type = 'client-request'
+        rpcId = $RpcId
+        method = $Method
+        payload = $Payload
+    } | ConvertTo-Json -Depth 10 -Compress
+    return Invoke-RestMethod -Method POST -Uri "$BaseUrl/api/$Method" -Headers @{ Origin = $BaseUrl } `
+        -ContentType 'application/json' -Body $body -TimeoutSec 30
+}
+
 function Invoke-MarketJson([string]$Method, [string]$Url, [hashtable]$Body = @{}) {
     $parameters = @{
         Method = $Method
@@ -95,12 +106,32 @@ try {
     }
     if ((& $node --version) -ne 'v24.19.0') { throw 'Windows verify: bundled Node version is unexpected' }
     if ((& $pnpm --version) -ne '11.7.0') { throw 'Windows verify: bundled pnpm version is unexpected' }
+    & $node (Join-Path $desktopDir 'scripts/verify-agent-presets.mjs') (Join-Path $installDir 'runtime/config/agent-presets')
 
     $env:DSH_HOME = $freshHome
     $dump = & $node $launcher web --patch $marketPatch --dump-config
     if (@($dump | Select-String -SimpleMatch '- id: dsh-market').Count -ne 1) { throw 'Windows verify: packaged market patch is absent' }
     if (@($dump | Select-String -SimpleMatch 'name: dshmarket-bundled').Count -ne 1) { throw 'Windows verify: packaged market alias is absent' }
     $url = Start-Host $freshHome @('--patch', $marketPatch)
+    $presetList = Invoke-RpcJson $url 'agentPreset.list' @{} 'desktop-preset-list'
+    if ($presetList.result.ok -ne $true) { throw "Windows verify: agent preset list failed: $($presetList | ConvertTo-Json -Depth 10 -Compress)" }
+    $presetEntries = @{}
+    foreach ($entry in $presetList.result.value.presets) { $presetEntries[$entry.id] = $entry }
+    $expectedPresets = @{
+        'anchored-standard' = 'Anchored Standard (experimental)'
+        'zero-anchored-standard' = 'Zero-Anchored Standard (experimental)'
+    }
+    foreach ($presetId in $expectedPresets.Keys) {
+        $entry = $presetEntries[$presetId]
+        if ($null -eq $entry -or $entry.name -ne $expectedPresets[$presetId] -or $entry.trust -ne 'system' -or $entry.broken) {
+            throw "Windows verify: packaged preset is not selectable: $presetId"
+        }
+        $created = Invoke-RpcJson $url 'session.create' @{ sessionId = "desktop-$presetId"; agentPreset = $presetId } "desktop-create-$presetId"
+        if ($created.result.ok -ne $true -or $created.result.value.agentPreset -ne $presetId) {
+            throw "Windows verify: packaged preset mount failed: $($created | ConvertTo-Json -Depth 10 -Compress)"
+        }
+    }
+    if ($presetEntries['standard'].isDefault -ne $true) { throw 'Windows verify: bundled community presets changed the default preset' }
     $registry = Invoke-MarketJson GET "$url/dsh-market/registry"
     if ($null -eq $registry) { throw 'Windows verify: plugin registry returned no data' }
     $installResult = Invoke-MarketJson POST "$url/dsh-market/install" @{ url = 'https://github.com/zhu1090093659/dsh-web-ui/tree/main/packages/dsh-web-ui-all' }
@@ -129,6 +160,7 @@ try {
     Write-Output 'PRODUCT=DeepSeek Harness'
     Write-Output 'MARKET=dshmarket@1.2.3'
     Write-Output 'MARKET_DSH_WEB_UI=@linxin666/dsh-web-ui-all'
+    Write-Output 'PRESETS=anchored-standard,zero-anchored-standard'
     Write-Output 'MARKET_CONFLICT_CHOICES=local,bundled'
     Write-Output 'PNPM=11.7.0'
     Write-Output "INSTALLER=$installer"

@@ -80,6 +80,8 @@ $manifest.dependencies.Remove('dshmarket')
 $manifest.dependencies['dshmarket-bundled'] = $expectedMarket
 $manifest | ConvertTo-Json -Depth 100 | Set-Content -Encoding utf8NoBOM $manifestPath
 python (Join-Path $desktopDir 'scripts/assemble-runtime.py') $runtime $root Windows
+python (Join-Path $desktopDir 'scripts/install-agent-presets.py') $runtime $desktopDir Windows
+node (Join-Path $desktopDir 'scripts/verify-agent-presets.mjs') (Join-Path $runtime 'config/agent-presets')
 
 $publishDir = Join-Path $workRoot 'shell'
 dotnet publish (Join-Path $windowsDir 'src/DeepSeekHarness.csproj') -c Release -r win-x64 --self-contained true -o $publishDir

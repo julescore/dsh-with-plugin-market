@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/xiaobright/dsh-anchored-standard",
+  "commit": "6472c1c9431dcfd9072be23bff781b76fe7146c0",
+  "license": "MIT",
+  "presets": {
+    "anchored-standard": {
+      "agent.cordis.yml": "8ee3f3402dcad0b3afde63523d0cd6987ebcf5eec57ea7284ba6275cf1eb3ece",
+      "preset.yml": "f5f96bbc21cd140864f2efbe0f0a1ec08ebc60693f307f4e015640ba3aa8ec39",
+      "tool-bootstrap.mjs": "e91af969c9f8ed593189fa22c56680898e78f012e4596416656401d40a1ba5bb"
+    },
+    "zero-anchored-standard": {
+      "agent.cordis.yml": "e2da5d817f2f7347847705c210d8c8b6bac0e59c32f7145cad99d4687e63e0f2",
+      "anchor-turn.mjs": "978ad0e341acec0146da91e108c3438d4e53f94fa40cdbf2e66333e2a6e246a6",
+      "preset.yml": "c5d85fe0898f59e049d30c750e992703b95da48393a6ca9fd71ff7d41c86479e",
+      "zero-tool-bootstrap.mjs": "f502c5e57d91f605805d8d5b240c99d4274d8ffc2793bb2b9ddfe22469de09d5"
+    }
+  }
+}
