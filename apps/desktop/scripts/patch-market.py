@@ -8,15 +8,15 @@ import sys
 
 def replace_once(path: Path, old: str, new: str, label: str) -> None:
     """Replace one version-pinned upstream fragment or stop the build."""
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     if text.count(old) != 1:
         raise SystemExit(f"desktop build: bundled market {label} is unexpected")
-    path.write_text(text.replace(old, new, 1))
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
 package_dir = Path(sys.argv[1])
 overrides_source = Path(sys.argv[2])
-overrides = json.loads(overrides_source.read_text())
+overrides = json.loads(overrides_source.read_text(encoding="utf-8"))
 if not isinstance(overrides, dict) or len(overrides) != 1:
     raise SystemExit("desktop build: market overrides must contain exactly one repository")
 url, override = next(iter(overrides.items()))
@@ -34,11 +34,11 @@ if url != source_urls[0] or override != expected:
     raise SystemExit("desktop build: dsh-web-ui market override is unexpected")
 
 manifest_path = package_dir / "package.json"
-manifest = json.loads(manifest_path.read_text())
+manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 if manifest.get("name") != "dshmarket" or manifest.get("version") != "1.2.3":
     raise SystemExit("desktop build: bundled market must be unmodified dshmarket@1.2.3")
 manifest["name"] = "dshmarket-bundled"
-manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 replace_once(
     package_dir / "client/client.js",
@@ -48,7 +48,7 @@ replace_once(
 )
 
 (package_dir / "data/distribution-overrides.json").write_text(
-    json.dumps(overrides, indent=2) + "\n"
+    json.dumps(overrides, indent=2) + "\n", encoding="utf-8"
 )
 
 registry_ts_policy = """

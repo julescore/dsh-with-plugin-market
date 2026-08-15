@@ -19,7 +19,7 @@ workspace_manifests = [
 ]
 workspace_packages = {}
 for manifest in workspace_manifests:
-    metadata = json.loads(manifest.read_text())
+    metadata = json.loads(manifest.read_text(encoding="utf-8"))
     name = metadata.get("name")
     if isinstance(name, str):
         workspace_packages[name] = manifest.parent
@@ -29,7 +29,7 @@ while True:
     for manifest in runtime.rglob("package.json"):
         if ".pnpm" in manifest.parts:
             continue
-        metadata = json.loads(manifest.read_text())
+        metadata = json.loads(manifest.read_text(encoding="utf-8"))
         for field in ("dependencies", "peerDependencies"):
             for dependency in metadata.get(field, {}):
                 if dependency.startswith("@deepseek-ai/") and not (runtime / "node_modules" / dependency).exists():
@@ -47,7 +47,7 @@ while True:
             destination,
             ignore=shutil.ignore_patterns("node_modules", ".artifacts", "tsconfig.json", "tsdown.config.ts"),
         )
-        metadata = json.loads((destination / "package.json").read_text())
+        metadata = json.loads((destination / "package.json").read_text(encoding="utf-8"))
         entry = metadata.get("module") or metadata.get("main")
         if isinstance(entry, str) and not (destination / entry).exists():
             raise SystemExit(f"{platform} build: {dependency} is missing its built entry: {entry}")

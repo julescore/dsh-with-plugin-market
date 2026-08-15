@@ -130,7 +130,7 @@ internal sealed class MainForm : Form
         Dock = DockStyle.Fill,
         Text = "Starting DeepSeek Harness…\r\n\r\nThe first launch may take a few seconds.",
         TextAlign = ContentAlignment.MiddleCenter,
-        Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 15, FontStyle.Regular),
+        Font = new Font(SystemFonts.MessageBoxFont!.FontFamily, 15, FontStyle.Regular),
     };
     private readonly StringBuilder errorTail = new();
     private Process? harness;
