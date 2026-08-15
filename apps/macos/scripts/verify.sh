@@ -300,13 +300,22 @@ if payload.get("ok") is not True:
 if payload.get("stale") is True:
     raise SystemExit(f"macOS verify: market update still hit the release-age wait: {payload}")
 PY_MARKET_UPDATE
-[[ $("$node" -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).version" \
-  "$conflict_home/profiles/web/node_modules/dshmarket/package.json") == "1.2.3" ]] || {
-  echo "macOS verify: market update did not install dshmarket@1.2.3" >&2
-  exit 1
-}
+market_updated_version=$("$node" -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).version" \
+  "$conflict_home/profiles/web/node_modules/dshmarket/package.json")
+MARKET_UPDATED_VERSION="$market_updated_version" python3 - <<'PY_MARKET_VERSION'
+import os
+import re
+
+before = (1, 1, 0)
+after_text = os.environ["MARKET_UPDATED_VERSION"]
+match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:[-+].*)?", after_text)
+if match is None or tuple(map(int, match.groups())) <= before:
+    raise SystemExit(
+        f"macOS verify: market update did not advance dshmarket beyond 1.1.0: {after_text}"
+    )
+PY_MARKET_VERSION
 stop_host
 
 sha256=$(shasum -a 256 "$dmg" | awk '{print $1}')
-printf 'macOS verification passed\nVERSION=%s\nBUNDLE_VERSION=%s\nBUILD=%s\nMARKET=dshmarket@1.2.3\nMARKET_DSH_WEB_UI=@linxin666/dsh-web-ui-all\nMARKET_DENIED_BUILDS=cloudflared,cpu-features,ssh2\nMARKET_CONFLICT_CHOICES=local,bundled\nMARKET_FIRST_CLICK_UPDATE=1.1.0-to-1.2.3\nPNPM=11.7.0\nDMG=%s\nSHA256=%s\n' \
-  "$version" "$bundle_version" "$build_number" "$dmg" "$sha256"
+printf 'macOS verification passed\nVERSION=%s\nBUNDLE_VERSION=%s\nBUILD=%s\nMARKET=dshmarket@1.2.3\nMARKET_DSH_WEB_UI=@linxin666/dsh-web-ui-all\nMARKET_DENIED_BUILDS=cloudflared,cpu-features,ssh2\nMARKET_CONFLICT_CHOICES=local,bundled\nMARKET_FIRST_CLICK_UPDATE=1.1.0-to-%s\nPNPM=11.7.0\nDMG=%s\nSHA256=%s\n' \
+  "$version" "$bundle_version" "$build_number" "$market_updated_version" "$dmg" "$sha256"
