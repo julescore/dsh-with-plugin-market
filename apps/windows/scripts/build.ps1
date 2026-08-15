@@ -7,8 +7,9 @@ $windowsDir = Join-Path $root 'apps/windows'
 $desktopDir = Join-Path $root 'apps/desktop'
 $outDir = Join-Path $root '.artifacts/windows'
 $cacheDir = Join-Path $root '.artifacts/toolchains'
-$buildDir = Join-Path $outDir 'DeepSeek Harness'
-$runtime = Join-Path $outDir 'runtime'
+$workRoot = if ($env:RUNNER_TEMP) { Join-Path $env:RUNNER_TEMP 'dsh-win' } else { Join-Path $outDir 'work' }
+$buildDir = Join-Path $workRoot 'app'
+$runtime = Join-Path $workRoot 'runtime'
 $nodeVersion = '24.19.0'
 $nodeArchive = "node-v$nodeVersion-win-x64.zip"
 $nodeSha256 = '57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73'
@@ -19,7 +20,7 @@ $marketVersion = '1.2.3'
 $marketArchive = "dshmarket-$marketVersion.tgz"
 $marketSha256 = '4824945d4d3966aca37b7cc71717e74b4ae0609ed731dd71b346e03576ab7ece'
 
-New-Item -ItemType Directory -Force -Path $outDir, $cacheDir | Out-Null
+New-Item -ItemType Directory -Force -Path $outDir, $cacheDir, $workRoot | Out-Null
 function Get-VerifiedArchive([string]$Url, [string]$Path, [string]$Sha256) {
     if (-not (Test-Path $Path)) { Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Path }
     $actual = (Get-FileHash -Algorithm SHA256 $Path).Hash.ToLowerInvariant()
@@ -80,7 +81,7 @@ $manifest.dependencies['dshmarket-bundled'] = $expectedMarket
 $manifest | ConvertTo-Json -Depth 100 | Set-Content -Encoding utf8NoBOM $manifestPath
 python (Join-Path $desktopDir 'scripts/assemble-runtime.py') $runtime $root Windows
 
-$publishDir = Join-Path $outDir 'shell'
+$publishDir = Join-Path $workRoot 'shell'
 dotnet publish (Join-Path $windowsDir 'src/DeepSeekHarness.csproj') -c Release -r win-x64 --self-contained true -o $publishDir
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 Copy-Item -Recurse -Force (Join-Path $publishDir '*') $buildDir
