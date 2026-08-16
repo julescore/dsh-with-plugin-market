@@ -12,6 +12,7 @@ mount_point=$(mktemp -d /private/tmp/deepseek-harness-macos.XXXXXX)
 fresh_home=$(mktemp -d /private/tmp/deepseek-harness-fresh-home.XXXXXX)
 conflict_home=$(mktemp -d /private/tmp/deepseek-harness-conflict-home.XXXXXX)
 recovery_home=$(mktemp -d /private/tmp/deepseek-harness-recovery-home.XXXXXX)
+diagnosis_home=$(mktemp -d /private/tmp/deepseek-harness-diagnosis-home.XXXXXX)
 stdout=$(mktemp /private/tmp/deepseek-harness-stdout.XXXXXX)
 stderr=$(mktemp /private/tmp/deepseek-harness-stderr.XXXXXX)
 dump=$(mktemp /private/tmp/deepseek-harness-dump.XXXXXX)
@@ -25,7 +26,7 @@ cleanup() {
   set +e
   stop_host >/dev/null 2>&1
   if [[ "$attached" == true ]]; then hdiutil detach "$mount_point" -force -quiet >/dev/null 2>&1 || true; fi
-  python3 - "$mount_point" "$fresh_home" "$conflict_home" "$recovery_home" "$stdout" "$stderr" "$dump" <<'PY_CLEAN'
+  python3 - "$mount_point" "$fresh_home" "$conflict_home" "$recovery_home" "$diagnosis_home" "$stdout" "$stderr" "$dump" <<'PY_CLEAN'
 from pathlib import Path
 import shutil
 import sys
@@ -143,12 +144,13 @@ launcher="$mounted_app/Contents/Resources/runtime/lib/bin.js"
 market_patch="$mounted_app/Contents/Resources/desktop/market.patch.yml"
 market_conflict_patch="$mounted_app/Contents/Resources/desktop/market-conflict.patch.yml"
 recovery_script="$mounted_app/Contents/Resources/desktop/reset-web-profile.mjs"
+diagnosis_script="$mounted_app/Contents/Resources/desktop/diagnose-web-plugins.mjs"
 market_package="$mounted_app/Contents/Resources/runtime/node_modules/dshmarket-bundled/package.json"
 preset_root="$mounted_app/Contents/Resources/runtime/config/agent-presets"
 pnpm="$node_bin/pnpm"
 [[ -x "$pnpm" ]] || { echo "macOS verify: bundled pnpm launcher is missing" >&2; exit 1; }
 [[ $("$pnpm" --version) == "11.7.0" ]] || { echo "macOS verify: unexpected bundled pnpm version" >&2; exit 1; }
-[[ -f "$market_patch" && -f "$market_conflict_patch" && -f "$market_package" && -f "$recovery_script" ]] || {
+[[ -f "$market_patch" && -f "$market_conflict_patch" && -f "$market_package" && -f "$recovery_script" && -f "$diagnosis_script" ]] || {
   echo "macOS verify: bundled market resources are missing" >&2
   exit 1
 }
@@ -188,6 +190,26 @@ for path in [
 if (home / "settings.yaml").read_text(encoding="utf-8") != "kept: true\n":
     raise SystemExit("macOS verify: packaged recovery changed settings")
 PY_RECOVERY
+
+# The packaged diagnosis names only the profile dependency implicated by a structured startup failure.
+mkdir -p "$diagnosis_home/profiles/web"
+printf '{"name":"dsh-profile-web","dependencies":{"@scope/broken":"npm:real-broken@1.0.0","healthy":"^1.0.0"}}\n' \
+  >"$diagnosis_home/profiles/web/package.json"
+diagnosis=$(printf 'dsh: plugin(s) failed to load: @scope/broken; Cordis startup failed\n' \
+  | env DSH_HOME="$diagnosis_home" "$node" "$diagnosis_script")
+DIAGNOSIS="$diagnosis" python3 - <<'PY_DIAGNOSIS'
+import json
+import os
+
+result = json.loads(os.environ["DIAGNOSIS"])
+if result.get("profileExists") is not True or result.get("manifestValid") is not True:
+    raise SystemExit(f"macOS verify: packaged diagnosis did not read the Web profile: {result}")
+candidates = result.get("candidates", [])
+if [candidate["name"] for candidate in candidates] != ["@scope/broken"]:
+    raise SystemExit(f"macOS verify: packaged diagnosis did not name the failing plugin: {result}")
+if candidates[0].get("signals") != ["failed load entry"]:
+    raise SystemExit(f"macOS verify: packaged diagnosis signal is unexpected: {result}")
+PY_DIAGNOSIS
 
 # A fresh profile receives exactly the packaged market.
 env DSH_HOME="$fresh_home" "$node" "$launcher" web --patch "$market_patch" --dump-config >"$dump"
@@ -391,5 +413,5 @@ PY_MARKET_VERSION
 stop_host
 
 sha256=$(shasum -a 256 "$dmg" | awk '{print $1}')
-printf 'macOS verification passed\nVERSION=%s\nBUNDLE_VERSION=%s\nBUILD=%s\nMARKET=dshmarket@1.2.3\nMARKET_DSH_WEB_UI=@linxin666/dsh-web-ui-all\nPRESETS=anchored-standard,zero-anchored-standard\nMARKET_DENIED_BUILDS=cloudflared,cpu-features,ssh2\nMARKET_CONFLICT_CHOICES=local,bundled\nMARKET_FIRST_CLICK_UPDATE=1.1.0-to-%s\nPNPM=11.7.0\nDMG=%s\nSHA256=%s\n' \
+printf 'macOS verification passed\nVERSION=%s\nBUNDLE_VERSION=%s\nBUILD=%s\nMARKET=dshmarket@1.2.3\nMARKET_DSH_WEB_UI=@linxin666/dsh-web-ui-all\nPRESETS=anchored-standard,zero-anchored-standard\nMARKET_DENIED_BUILDS=cloudflared,cpu-features,ssh2\nMARKET_CONFLICT_CHOICES=local,bundled\nMARKET_FIRST_CLICK_UPDATE=1.1.0-to-%s\nSTARTUP_PLUGIN_DIAGNOSIS=structured\nPNPM=11.7.0\nDMG=%s\nSHA256=%s\n' \
   "$version" "$bundle_version" "$build_number" "$market_updated_version" "$dmg" "$sha256"

@@ -12,6 +12,7 @@ $installDir = Join-Path $testRoot 'i'
 $freshHome = Join-Path $testRoot 'fresh'
 $conflictHome = Join-Path $testRoot 'conflict'
 $recoveryHome = Join-Path $testRoot 'recovery'
+$diagnosisHome = Join-Path $testRoot 'diagnosis'
 $selfTest = Join-Path $testRoot 'self-test.json'
 $stdout = Join-Path $testRoot 'stdout.log'
 $stderr = Join-Path $testRoot 'stderr.log'
@@ -80,7 +81,7 @@ function Invoke-MarketJson([string]$Method, [string]$Url, [hashtable]$Body = @{}
 
 try {
     if (-not (Test-Path $installer)) { throw "Windows verify: missing $installer" }
-    New-Item -ItemType Directory -Force -Path $testRoot, $installDir, $freshHome, $conflictHome, $recoveryHome | Out-Null
+    New-Item -ItemType Directory -Force -Path $testRoot, $installDir, $freshHome, $conflictHome, $recoveryHome, $diagnosisHome | Out-Null
     $install = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', "/DIR=$installDir", "/LOG=$installerLog") -PassThru -Wait
     if ($install.ExitCode -ne 0) {
         $detail = if (Test-Path $installerLog) { Get-Content -Raw $installerLog } else { 'installer log was not created' }
@@ -94,7 +95,8 @@ try {
     $marketPatch = Join-Path $installDir 'desktop/market.patch.yml'
     $marketConflictPatch = Join-Path $installDir 'desktop/market-conflict.patch.yml'
     $recoveryScript = Join-Path $installDir 'desktop/reset-web-profile.mjs'
-    foreach ($path in @($app, $node, $pnpm, $launcher, $marketPatch, $marketConflictPatch, $recoveryScript)) {
+    $diagnosisScript = Join-Path $installDir 'desktop/diagnose-web-plugins.mjs'
+    foreach ($path in @($app, $node, $pnpm, $launcher, $marketPatch, $marketConflictPatch, $recoveryScript, $diagnosisScript)) {
         if (-not (Test-Path $path)) { throw "Windows verify: installed resource is missing: $path" }
     }
     $bundledBin = Split-Path -Parent $node
@@ -103,7 +105,7 @@ try {
     $selfTestProcess = Start-Process -FilePath $app -ArgumentList @('--self-test', $selfTest) -PassThru -Wait
     if ($selfTestProcess.ExitCode -ne 0) { throw 'Windows verify: shell self-test failed' }
     $self = Get-Content -Raw $selfTest | ConvertFrom-Json
-    if ($self.product -ne 'DeepSeek Harness' -or -not $self.node -or -not $self.launcher -or -not $self.marketPatch -or -not $self.marketConflictPatch -or -not $self.recoveryScript -or -not $self.conflictParser) {
+    if ($self.product -ne 'DeepSeek Harness' -or -not $self.node -or -not $self.launcher -or -not $self.marketPatch -or -not $self.marketConflictPatch -or -not $self.recoveryScript -or -not $self.diagnosisScript -or -not $self.conflictParser) {
         throw "Windows verify: shell self-test returned unexpected data: $(Get-Content -Raw $selfTest)"
     }
     if ((& $node --version) -ne 'v24.19.0') { throw 'Windows verify: bundled Node version is unexpected' }
@@ -134,6 +136,20 @@ try {
         (Join-Path $recoveryHome '.agent-presets/mine/agent.cordis.yml')
     )) {
         if (-not (Test-Path $path)) { throw "Windows verify: installed recovery removed preserved data: $path" }
+    }
+
+    # The installed diagnosis names only the profile dependency implicated by a structured startup failure.
+    New-Item -ItemType Directory -Force -Path (Join-Path $diagnosisHome 'profiles/web') | Out-Null
+    Set-Content -Encoding utf8NoBOM (Join-Path $diagnosisHome 'profiles/web/package.json') `
+        '{"name":"dsh-profile-web","dependencies":{"@scope/broken":"npm:real-broken@1.0.0","healthy":"^1.0.0"}}'
+    $env:DSH_HOME = $diagnosisHome
+    $diagnosisOutput = ('dsh: plugin(s) failed to load: @scope/broken; Cordis startup failed' | & $node $diagnosisScript) -join "`n"
+    $diagnosis = $diagnosisOutput | ConvertFrom-Json
+    if ($diagnosis.profileExists -ne $true -or $diagnosis.manifestValid -ne $true) {
+        throw "Windows verify: installed diagnosis did not read the Web profile: $diagnosisOutput"
+    }
+    if (@($diagnosis.candidates).Count -ne 1 -or $diagnosis.candidates[0].name -ne '@scope/broken' -or $diagnosis.candidates[0].signals[0] -ne 'failed load entry') {
+        throw "Windows verify: installed diagnosis did not name the failing plugin: $diagnosisOutput"
     }
 
     $env:DSH_HOME = $freshHome
@@ -190,6 +206,7 @@ try {
     Write-Output 'MARKET_DSH_WEB_UI=@linxin666/dsh-web-ui-all'
     Write-Output 'PRESETS=anchored-standard,zero-anchored-standard'
     Write-Output 'MARKET_CONFLICT_CHOICES=local,bundled'
+    Write-Output 'STARTUP_PLUGIN_DIAGNOSIS=structured'
     Write-Output 'PNPM=11.7.0'
     Write-Output "INSTALLER=$installer"
     Write-Output "SHA256=$sha256"

@@ -6,7 +6,9 @@
 
 应用使用 .NET 8 WinForms 与 Microsoft Edge WebView2 外壳，内置 Node.js 24.19.0、pnpm 11.7.0、Harness 生产运行时、`dshmarket@1.2.3`，以及经过校验和锁定的 **Anchored Standard (experimental)** 与 **Zero-Anchored Standard (experimental)** 社区 preset，并生成 Inno Setup 安装程序。新建会话时可以选择这些 preset，但 Standard 仍是默认模式。Windows 通常已内置 WebView2 Runtime；如果缺失，应用会明确提示安装要求。
 
-市场安装和更新只有在完整 Web profile 组合成功后才会被接受；否则会恢复此前的依赖清单、lockfile、构建策略和安装解析结果。启动错误页可以只把无效 Web profile 移到 `$DSH_HOME/profile-backups/` 并重新启动，同时保留会话、设置、凭据、个人 preset 和其他 profile。
+应用启动时会在通知区域（系统托盘）安装图标。点窗口关闭按钮只隐藏窗口，Harness 进程继续运行；点托盘图标可重新打开窗口。通过托盘菜单“退出”才会停止后台进程。
+
+市场安装和更新只有在完整 Web profile 组合成功后才会被接受；否则会恢复此前的依赖清单、lockfile、构建策略和安装解析结果。启动错误页可以只把无效 Web profile 移到 `$DSH_HOME/profile-backups/` 并重新启动，同时保留会话、设置、凭据、个人 preset 和其他 profile。当启动诊断能定位到具体插件时，错误页会先列出插件名并提供“卸载并自动重启”，整体重置 profile 只作为兜底。
 
 在 Windows 上构建和验证：
 

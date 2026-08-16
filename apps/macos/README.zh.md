@@ -8,11 +8,13 @@
 
 `src/main.swift` 创建包含 `WKWebView` 的 AppKit 窗口，在随机回环端口启动内置 Node.js 24.19.0 与 Harness 生产运行时，并将内嵌导航限制在该来源；其他 HTTP 和 HTTPS 链接由默认浏览器打开。子进程使用用户主目录、标准 `~/.dsh` 状态和内置 pnpm 11.7.0，应用不会复制凭据。
 
+应用启动时会在菜单栏安装状态项图标。点窗口关闭按钮只隐藏窗口，Harness 进程继续运行；点状态项图标（或 Dock 图标）可重新打开窗口。通过应用菜单或状态项菜单“退出”才会停止后台进程。
+
 应用挂载共享的 `apps/desktop/resources/market.patch.yml`，预载 `dshmarket@1.2.3`。如果 `dsh web --dump-config` 检测到已有 `dsh-market` 条目，用户可选择本次启动使用本地市场或安装包市场。安装包选项只在本次进程组合中禁用本地条目，不会修改插件、会话、凭据或 profile 文件。
 
 共享发行策略会把 `dsh-web-ui` 仓库及目录地址映射到 `@linxin666/dsh-web-ui-all`，只为市场自身更新跳过发布等待期，并在用户没有既有选择时明确拒绝 `cloudflared`、`cpu-features` 和 `ssh2` 构建脚本；同时把经过校验和锁定的 **Anchored Standard (experimental)** 与 **Zero-Anchored Standard (experimental)** 社区 preset 安装成非默认系统 preset。社区插件和 preset 仍是需要用户自行信任的第三方代码。
 
-市场安装或更新必须通过完整 Web profile 组合检查才会被接受。检查失败时会恢复依赖清单、lockfile、构建策略和此前的安装解析结果。如果启动时仍遇到旧版应用或其他工具留下的无效 profile，错误页可以只把 Web profile 移到 `$DSH_HOME/profile-backups/` 下的时间戳备份，然后重新打开应用；会话、设置、凭据和个人 preset 都会保留。
+市场安装或更新必须通过完整 Web profile 组合检查才会被接受。检查失败时会恢复依赖清单、lockfile、构建策略和此前的安装解析结果。如果启动时仍遇到旧版应用或其他工具留下的无效 profile，错误页可以只把 Web profile 移到 `$DSH_HOME/profile-backups/` 下的时间戳备份，然后重新打开应用；会话、设置、凭据和个人 preset 都会保留。当启动诊断能定位到具体插件时，错误页会先列出插件名并提供“卸载并自动重启”，整体重置 profile 只作为兜底。
 
 ## 构建与验证
 

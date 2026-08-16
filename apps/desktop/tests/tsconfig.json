@@ -9,6 +9,7 @@
   },
   "include": [
     "*.ts",
-    "../scripts/reset-web-profile.d.mts"
+    "../scripts/reset-web-profile.d.mts",
+    "../scripts/diagnose-web-plugins.d.mts"
   ]
 }

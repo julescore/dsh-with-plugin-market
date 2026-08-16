@@ -6,7 +6,9 @@ This directory packages the existing DeepSeek Harness Web application as a nativ
 
 The application uses a .NET 8 WinForms shell with Microsoft Edge WebView2, bundles Node.js 24.19.0, pnpm 11.7.0, the production Harness runtime, `dshmarket@1.2.3`, and the checksum-pinned **Anchored Standard (experimental)** and **Zero-Anchored Standard (experimental)** community presets, and generates an Inno Setup installer. The presets are selectable for new sessions but Standard remains the default. Windows normally includes WebView2 Runtime; when it is absent the application presents an explicit installation requirement.
 
-Market installs and updates are accepted only after the complete Web profile composes successfully; otherwise the previous manifest, lockfile, build policy, and installed resolution are restored. A startup failure page can move only the invalid Web profile into `$DSH_HOME/profile-backups/` and restart, while preserving sessions, settings, credentials, personal presets, and other profiles.
+A notification-area (system tray) icon is installed at launch. Closing the window only hides it; the Harness process keeps running, and clicking the tray icon reopens the window. Exiting through the tray menu stops the background process.
+
+Market installs and updates are accepted only after the complete Web profile composes successfully; otherwise the previous manifest, lockfile, build policy, and installed resolution are restored. A startup failure page can move only the invalid Web profile into `$DSH_HOME/profile-backups/` and restart, while preserving sessions, settings, credentials, personal presets, and other profiles. When the startup diagnostic names specific installed plugins, the page lists them and offers one-click uninstall and restart before the full-profile reset fallback.
 
 Build and verify on Windows:
 

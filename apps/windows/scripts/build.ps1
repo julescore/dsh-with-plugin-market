@@ -94,6 +94,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $buildDir 'desktop') | Out-
 Copy-Item -Force (Join-Path $desktopDir 'resources/market.patch.yml') (Join-Path $buildDir 'desktop/market.patch.yml')
 Copy-Item -Force (Join-Path $desktopDir 'resources/market-conflict.patch.yml') (Join-Path $buildDir 'desktop/market-conflict.patch.yml')
 Copy-Item -Force (Join-Path $desktopDir 'scripts/reset-web-profile.mjs') (Join-Path $buildDir 'desktop/reset-web-profile.mjs')
+Copy-Item -Force (Join-Path $desktopDir 'scripts/diagnose-web-plugins.mjs') (Join-Path $buildDir 'desktop/diagnose-web-plugins.mjs')
 Copy-Item -Force (Join-Path $windowsDir 'resources/THIRD-PARTY-NOTICES.md') (Join-Path $buildDir 'THIRD-PARTY-NOTICES.md')
 
 $pnpmCmd = @'
