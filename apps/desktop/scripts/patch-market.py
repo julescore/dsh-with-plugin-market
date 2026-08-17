@@ -2,6 +2,7 @@
 """Apply desktop-distribution-only aliases and curated market policies."""
 
 from pathlib import Path
+from shutil import copyfile
 import json
 import sys
 
@@ -39,6 +40,10 @@ if manifest.get("name") != "dshmarket" or manifest.get("version") != "1.2.3":
     raise SystemExit("desktop build: bundled market must be unmodified dshmarket@1.2.3")
 manifest["name"] = "dshmarket-bundled"
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+resources_dir = Path(__file__).resolve().parent.parent / "resources"
+copyfile(resources_dir / "profile-transaction.ts", package_dir / "src/profile-transaction.ts")
+copyfile(resources_dir / "profile-transaction.js", package_dir / "lib/profile-transaction.js")
 
 replace_once(
     package_dir / "client/client.js",
@@ -185,7 +190,7 @@ replace_once(
 replace_once(
     routes_ts,
     "import { loadRegistry } from './registry.ts'",
-    "import { distributionOverride, loadRegistry } from './registry.ts'",
+    "import { distributionOverride, loadRegistry } from './registry.ts'\nimport { captureProfile, validateProfileMutation } from './profile-transaction.ts'",
     "TypeScript registry imports",
 )
 routes_js = package_dir / "lib/routes.js"
@@ -204,7 +209,7 @@ replace_once(
 replace_once(
     routes_js,
     "import { loadRegistry } from './registry.js';",
-    "import { distributionOverride, loadRegistry } from './registry.js';",
+    "import { distributionOverride, loadRegistry } from './registry.js';\nimport { captureProfile, validateProfileMutation } from './profile-transaction.js';",
     "runtime registry imports",
 )
 
@@ -284,7 +289,7 @@ install_guard_ts = """          if (target === null) {
 replace_once(
     routes_ts,
     install_guard_ts,
-    install_guard_ts + "          const override = distributionOverride(entry.url)\n          if (override !== undefined) denyBuildScripts(config.profile, override.denyBuilds)\n",
+    install_guard_ts,
     "TypeScript install policy",
 )
 install_guard_js = """                    if (target === null) {
@@ -295,8 +300,42 @@ install_guard_js = """                    if (target === null) {
 replace_once(
     routes_js,
     install_guard_js,
-    install_guard_js + "                    const override = distributionOverride(entry.url);\n                    if (override !== undefined)\n                        denyBuildScripts(config.profile, override.denyBuilds);\n",
+    install_guard_js,
     "runtime install policy",
+)
+
+install_transaction_ts = """          installing = true
+          try {
+            const before = new Set(Object.keys(readInstalled(config.profile)))
+"""
+replace_once(
+    routes_ts,
+    install_transaction_ts,
+    """          const snapshot = captureProfile(config.profile)
+          const override = distributionOverride(entry.url)
+          if (override !== undefined) denyBuildScripts(config.profile, override.denyBuilds)
+          installing = true
+          try {
+            const before = new Set(Object.keys(readInstalled(config.profile)))
+""",
+    "TypeScript install transaction start",
+)
+install_transaction_js = """                    installing = true;
+                    try {
+                        const before = new Set(Object.keys(readInstalled(config.profile)));
+"""
+replace_once(
+    routes_js,
+    install_transaction_js,
+    """                    const snapshot = captureProfile(config.profile);
+                    const override = distributionOverride(entry.url);
+                    if (override !== undefined)
+                        denyBuildScripts(config.profile, override.denyBuilds);
+                    installing = true;
+                    try {
+                        const before = new Set(Object.keys(readInstalled(config.profile)));
+""",
+    "runtime install transaction start",
 )
 
 replace_once(
@@ -310,4 +349,191 @@ replace_once(
     "                    const force = body.force === true;\n",
     "                    const force = body.force === true || name === 'dshmarket' || name === 'dsh-market';\n",
     "runtime market update policy",
+)
+
+
+replace_once(
+    routes_ts,
+    """          if (spec === undefined) {
+            sendJson(response, 400, { error: 'plugin is not installed' })
+            return
+          }
+""",
+    """          if (spec === undefined) {
+            sendJson(response, 400, { error: 'plugin is not installed' })
+            return
+          }
+          const snapshot = captureProfile(config.profile)
+""",
+    "TypeScript update snapshot",
+)
+replace_once(
+    routes_js,
+    """                    if (spec === undefined) {
+                        sendJson(response, 400, { error: 'plugin is not installed' });
+                        return;
+                    }
+""",
+    """                    if (spec === undefined) {
+                        sendJson(response, 400, { error: 'plugin is not installed' });
+                        return;
+                    }
+                    const snapshot = captureProfile(config.profile);
+""",
+    "runtime update snapshot",
+)
+
+update_validation_ts_old = """            if (ok) invalidateUpdates()
+            const staleError = stale
+"""
+update_validation_ts_new = """            const transaction = await validateProfileMutation(runPlugin, snapshot, 'update', ok)
+            ok = transaction.ok
+            const compatibilityError = transaction.error
+            if (ok) invalidateUpdates()
+            const staleError = stale
+"""
+replace_once(routes_ts, update_validation_ts_old, update_validation_ts_new, "TypeScript update transaction")
+
+update_validation_js_old = """                        if (ok)
+                            invalidateUpdates();
+                        const staleError = stale
+"""
+update_validation_js_new = """                        const transaction = await validateProfileMutation(runPlugin, snapshot, 'update', ok);
+                        ok = transaction.ok;
+                        const compatibilityError = transaction.error;
+                        if (ok)
+                            invalidateUpdates();
+                        const staleError = stale
+"""
+replace_once(routes_js, update_validation_js_old, update_validation_js_new, "runtime update transaction")
+replace_once(routes_ts, "              error: staleError ?? undefined,\n", "              error: compatibilityError ?? staleError ?? undefined,\n", "TypeScript update compatibility error")
+replace_once(routes_js, "                    error: staleError ?? undefined,\n", "                    error: compatibilityError ?? staleError ?? undefined,\n", "runtime update compatibility error")
+
+install_validation_ts_old = """            const installed = readInstalled(config.profile)
+            let hot = false
+"""
+install_validation_ts_new = """            const transaction = await validateProfileMutation(runPlugin, snapshot, 'install', ok)
+            ok = transaction.ok
+            const compatibilityError = transaction.error
+            const installed = readInstalled(config.profile)
+            let hot = false
+"""
+replace_once(routes_ts, install_validation_ts_old, install_validation_ts_new, "TypeScript install transaction")
+
+install_validation_js_old = """                        const installed = readInstalled(config.profile);
+                        let hot = false;
+"""
+install_validation_js_new = """                        const transaction = await validateProfileMutation(runPlugin, snapshot, 'install', ok);
+                        ok = transaction.ok;
+                        const compatibilityError = transaction.error;
+                        const installed = readInstalled(config.profile);
+                        let hot = false;
+"""
+replace_once(routes_js, install_validation_js_old, install_validation_js_new, "runtime install transaction")
+replace_once(
+    routes_ts,
+    "              error: notAPlugin ? 'nothing installable: the plugin(s) need a build step (blocked by default, see allowBuilds) or ship no prebuilt artifacts / 没有可安装的内容：插件需要构建授权（allowBuilds，默认拦截）或未附带构建产物，详见导出日志' : undefined,\n",
+    "              error: compatibilityError ?? (notAPlugin ? 'nothing installable: the plugin(s) need a build step (blocked by default, see allowBuilds) or ship no prebuilt artifacts / 没有可安装的内容：插件需要构建授权（allowBuilds，默认拦截）或未附带构建产物，详见导出日志' : undefined),\n",
+    "TypeScript install compatibility error",
+)
+replace_once(
+    routes_js,
+    "                    error: notAPlugin ? 'nothing installable: the plugin(s) need a build step (blocked by default, see allowBuilds) or ship no prebuilt artifacts / 没有可安装的内容：插件需要构建授权（allowBuilds，默认拦截）或未附带构建产物，详见导出日志' : undefined,\n",
+    "                    error: compatibilityError ?? (notAPlugin ? 'nothing installable: the plugin(s) need a build step (blocked by default, see allowBuilds) or ship no prebuilt artifacts / 没有可安装的内容：插件需要构建授权（allowBuilds，默认拦截）或未附带构建产物，详见导出日志' : undefined),\n",
+    "runtime install compatibility error",
+)
+
+update_finally_ts = """          } finally {
+            installing = false
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          host.logger?.warn(`[dsh-market] update failed: ${message}`)
+"""
+replace_once(
+    routes_ts,
+    update_finally_ts,
+    """          } catch (error) {
+            await validateProfileMutation(runPlugin, snapshot, 'update', false)
+            throw error
+          } finally {
+            installing = false
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          host.logger?.warn(`[dsh-market] update failed: ${message}`)
+""",
+    "TypeScript update exception rollback",
+)
+update_finally_js = """                    finally {
+                        installing = false;
+                    }
+                }
+                catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    host.logger?.warn(`[dsh-market] update failed: ${message}`);
+"""
+replace_once(
+    routes_js,
+    update_finally_js,
+    """                    catch (error) {
+                        await validateProfileMutation(runPlugin, snapshot, 'update', false);
+                        throw error;
+                    }
+                    finally {
+                        installing = false;
+                    }
+                }
+                catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    host.logger?.warn(`[dsh-market] update failed: ${message}`);
+""",
+    "runtime update exception rollback",
+)
+install_finally_ts = """          } finally {
+            installing = false
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          host.logger?.warn(`[dsh-market] install failed: ${message}`)
+"""
+replace_once(
+    routes_ts,
+    install_finally_ts,
+    """          } catch (error) {
+            await validateProfileMutation(runPlugin, snapshot, 'install', false)
+            throw error
+          } finally {
+            installing = false
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          host.logger?.warn(`[dsh-market] install failed: ${message}`)
+""",
+    "TypeScript install exception rollback",
+)
+install_finally_js = """                    finally {
+                        installing = false;
+                    }
+                }
+                catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    host.logger?.warn(`[dsh-market] install failed: ${message}`);
+"""
+replace_once(
+    routes_js,
+    install_finally_js,
+    """                    catch (error) {
+                        await validateProfileMutation(runPlugin, snapshot, 'install', false);
+                        throw error;
+                    }
+                    finally {
+                        installing = false;
+                    }
+                }
+                catch (error) {
+                    const message = error instanceof Error ? error.message : String(error);
+                    host.logger?.warn(`[dsh-market] install failed: ${message}`);
+""",
+    "runtime install exception rollback",
 )

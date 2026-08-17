@@ -36,8 +36,11 @@ private struct HarnessResources {
     let root: URL
     let node: URL
     let launcher: URL
+    let visionPatch: URL
     let marketPatch: URL
     let marketConflictPatch: URL
+    let recoveryScript: URL
+    let diagnosisScript: URL
 
     static func load() throws -> HarnessResources {
         guard let root = Bundle.main.resourceURL else { throw failure(1, "应用资源目录不可用。") }
@@ -45,8 +48,11 @@ private struct HarnessResources {
             root: root,
             node: root.appendingPathComponent("node/bin/node"),
             launcher: root.appendingPathComponent("runtime/lib/bin.js"),
+            visionPatch: root.appendingPathComponent("desktop/vision.patch.yml"),
             marketPatch: root.appendingPathComponent("desktop/market.patch.yml"),
-            marketConflictPatch: root.appendingPathComponent("desktop/market-conflict.patch.yml")
+            marketConflictPatch: root.appendingPathComponent("desktop/market-conflict.patch.yml"),
+            recoveryScript: root.appendingPathComponent("desktop/reset-web-profile.mjs"),
+            diagnosisScript: root.appendingPathComponent("desktop/diagnose-web-plugins.mjs")
         )
         guard FileManager.default.isExecutableFile(atPath: resources.node.path) else {
             throw failure(2, "内置 Node.js 运行时缺失。")
@@ -54,10 +60,19 @@ private struct HarnessResources {
         guard FileManager.default.fileExists(atPath: resources.launcher.path) else {
             throw failure(3, "DeepSeek Harness 运行时缺失。")
         }
+        guard FileManager.default.fileExists(atPath: resources.visionPatch.path) else {
+            throw failure(4, "内置图片识别配置缺失。")
+        }
         for patch in [resources.marketPatch, resources.marketConflictPatch] {
             guard FileManager.default.fileExists(atPath: patch.path) else {
                 throw failure(4, "内置插件市场配置缺失。")
             }
+        }
+        guard FileManager.default.fileExists(atPath: resources.recoveryScript.path) else {
+            throw failure(7, "本地环境恢复工具缺失。")
+        }
+        guard FileManager.default.fileExists(atPath: resources.diagnosisScript.path) else {
+            throw failure(10, "启动诊断工具缺失。")
         }
         return resources
     }
@@ -76,7 +91,7 @@ private enum MarketLaunchMode {
     case bundledReplacingLocal
 
     func arguments(resources: HarnessResources) -> [String] {
-        var arguments = [resources.launcher.path, "web"]
+        var arguments = [resources.launcher.path, "web", "--patch", resources.visionPatch.path]
         switch self {
         case .local:
             break
@@ -90,29 +105,165 @@ private enum MarketLaunchMode {
     }
 }
 
+private struct CommandOutcome {
+    let status: Int32
+    let stdout: String
+    let stderr: String
+}
+
+/** Runs one short bundled-Node command with both pipes drained concurrently. */
+private final class CapturedCommand {
+    private let process = Process()
+    private let output = Pipe()
+    private let errors = Pipe()
+    private let lock = NSLock()
+    private var outputBuffer = Data()
+    private var errorBuffer = Data()
+
+    func run(resources: HarnessResources, arguments: [String], input: Data? = nil, timeout: TimeInterval) throws -> CommandOutcome {
+        process.executableURL = resources.node
+        process.arguments = arguments
+        process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
+        process.environment = resources.environment()
+        process.standardOutput = output
+        process.standardError = errors
+        output.fileHandleForReading.readabilityHandler = { [weak self] in self?.consumeOutput($0.availableData) }
+        errors.fileHandleForReading.readabilityHandler = { [weak self] in self?.consumeError($0.availableData) }
+        if let input {
+            let stdin = Pipe()
+            process.standardInput = stdin
+            try process.run()
+            do {
+                try stdin.fileHandleForWriting.write(contentsOf: input)
+                try stdin.fileHandleForWriting.close()
+            } catch {
+                process.terminate()
+                process.waitUntilExit()
+                throw error
+            }
+        } else {
+            try process.run()
+        }
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        if process.isRunning {
+            process.terminate()
+            let killDeadline = Date().addingTimeInterval(4)
+            while process.isRunning && Date() < killDeadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            }
+            if process.isRunning {
+                kill(process.processIdentifier, SIGKILL)
+                process.waitUntilExit()
+            }
+            closePipes()
+            let detail = lock.withLock { String(data: errorBuffer, encoding: .utf8) ?? "" }
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            throw failure(11, "内置命令执行超时（\(arguments.joined(separator: " "))）。" + (detail.isEmpty ? "" : "\n\n\(detail)"))
+        }
+        process.waitUntilExit()
+        consumeOutput(output.fileHandleForReading.readDataToEndOfFile())
+        consumeError(errors.fileHandleForReading.readDataToEndOfFile())
+        closePipes()
+        let state = lock.withLock { (String(data: outputBuffer, encoding: .utf8) ?? "", String(data: errorBuffer, encoding: .utf8) ?? "") }
+        return CommandOutcome(status: process.terminationStatus, stdout: state.0, stderr: state.1)
+    }
+
+    private func consumeOutput(_ data: Data) {
+        guard !data.isEmpty else { return }
+        lock.withLock { outputBuffer.append(data) }
+    }
+
+    private func consumeError(_ data: Data) {
+        guard !data.isEmpty else { return }
+        lock.withLock { errorBuffer.append(data) }
+    }
+
+    private func closePipes() {
+        output.fileHandleForReading.readabilityHandler = nil
+        errors.fileHandleForReading.readabilityHandler = nil
+    }
+}
+
 private func detectsLocalMarket(resources: HarnessResources) throws -> Bool {
-    let process = Process()
-    let output = Pipe()
-    let errors = Pipe()
-    process.executableURL = resources.node
-    process.arguments = [resources.launcher.path, "web", "--dump-config"]
-    process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
-    process.environment = resources.environment()
-    process.standardOutput = output
-    process.standardError = errors
-    try process.run()
-    let outputData = output.fileHandleForReading.readDataToEndOfFile()
-    process.waitUntilExit()
-    let errorData = errors.fileHandleForReading.readDataToEndOfFile()
-    guard process.terminationStatus == 0 else {
-        let detail = String(data: errorData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let message = "无法检查本地插件配置（状态码 \(process.terminationStatus)）。" + (detail.isEmpty ? "" : "\n\n\(detail)")
+    let outcome = try CapturedCommand().run(
+        resources: resources,
+        arguments: [resources.launcher.path, "web", "--dump-config"],
+        timeout: 60
+    )
+    guard outcome.status == 0 else {
+        let detail = outcome.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let message = "无法检查本地插件配置（状态码 \(outcome.status)）。" + (detail.isEmpty ? "" : "\n\n\(detail)")
         throw failure(5, message)
     }
-    guard let config = String(data: outputData, encoding: .utf8) else {
-        throw failure(6, "本地插件配置不是有效的 UTF-8 文本。")
+    return containsMarketEntry(outcome.stdout)
+}
+
+private struct ProfileRecoveryResult: Decodable {
+    let changed: Bool
+    let backup: String?
+}
+
+private func resetWebProfile(resources: HarnessResources) throws -> ProfileRecoveryResult {
+    let outcome = try CapturedCommand().run(
+        resources: resources,
+        arguments: [resources.recoveryScript.path],
+        timeout: 60
+    )
+    guard outcome.status == 0 else {
+        let detail = outcome.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        throw failure(8, "无法备份并重置本地 Web profile。" + (detail.isEmpty ? "" : "\n\n\(detail)"))
     }
-    return containsMarketEntry(config)
+    do {
+        return try JSONDecoder().decode(ProfileRecoveryResult.self, from: Data(outcome.stdout.utf8))
+    } catch {
+        throw failure(9, "本地环境恢复工具返回了无效结果。")
+    }
+}
+
+private struct WebPluginCandidate: Decodable {
+    let name: String
+    let spec: String
+    let signals: [String]
+}
+
+private struct WebPluginDiagnosis: Decodable {
+    let profileExists: Bool
+    let manifestValid: Bool
+    let candidates: [WebPluginCandidate]
+}
+
+private func diagnoseWebPlugins(resources: HarnessResources, failureText: String) throws -> WebPluginDiagnosis {
+    let outcome = try CapturedCommand().run(
+        resources: resources,
+        arguments: [resources.diagnosisScript.path],
+        input: Data(failureText.utf8),
+        timeout: 30
+    )
+    guard outcome.status == 0 else {
+        let detail = outcome.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        throw failure(12, "无法分析启动失败原因。" + (detail.isEmpty ? "" : "\n\n\(detail)"))
+    }
+    do {
+        return try JSONDecoder().decode(WebPluginDiagnosis.self, from: Data(outcome.stdout.utf8))
+    } catch {
+        throw failure(13, "启动诊断工具返回了无效结果。")
+    }
+}
+
+private func removeWebPlugins(resources: HarnessResources, names: [String]) throws {
+    let outcome = try CapturedCommand().run(
+        resources: resources,
+        arguments: [resources.launcher.path, "plugin", "--profile", "web", "remove"] + names,
+        timeout: 300
+    )
+    guard outcome.status == 0 else {
+        let detail = (outcome.stderr.isEmpty ? outcome.stdout : outcome.stderr)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        throw failure(14, "无法卸载不兼容插件（\(names.joined(separator: "、"))）。" + (detail.isEmpty ? "" : "\n\n\(detail)"))
+    }
 }
 
 private final class HarnessProcess {
@@ -127,7 +278,7 @@ private final class HarnessProcess {
     private let maximumErrorBytes = 32 * 1024
 
     var onReady: ((URL) -> Void)?
-    var onExit: ((String) -> Void)?
+    var onExit: ((String, Bool) -> Void)?
 
     func start(resources: HarnessResources, mode: MarketLaunchMode) throws {
         process.executableURL = resources.node
@@ -191,7 +342,8 @@ private final class HarnessProcess {
         let prefix = state.1 ? "Harness 后台进程意外退出" : "Harness 启动失败"
         let detail = state.2.trimmingCharacters(in: .whitespacesAndNewlines)
         let message = "\(prefix)（状态码 \(task.terminationStatus)）。" + (detail.isEmpty ? "" : "\n\n\(detail)")
-        DispatchQueue.main.async { self.onExit?(message) }
+        let wasReady = state.1
+        DispatchQueue.main.async { self.onExit?(message, wasReady) }
     }
 
     private func closePipes() {
@@ -208,11 +360,15 @@ private extension NSLock {
     }
 }
 
-private final class MainWindowController: NSWindowController, WKNavigationDelegate, WKUIDelegate {
-    private let harness = HarnessProcess()
+private final class MainWindowController: NSWindowController, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate {
+    private var harness = HarnessProcess()
+    private var resources: HarnessResources?
     private let container = NSView()
     private var webView: WKWebView?
     private var harnessOrigin: String?
+    private var lastMarketChoice: MarketLaunchMode?
+    private var lastHadLocalMarket: Bool?
+    private var pendingUninstall: [WebPluginCandidate]?
 
     init() {
         let window = NSWindow(
@@ -226,35 +382,73 @@ private final class MainWindowController: NSWindowController, WKNavigationDelega
         window.minSize = NSSize(width: 900, height: 620)
         window.center()
         super.init(window: window)
+        window.delegate = self
         window.contentView = container
         replaceContent(with: statusView(title: "正在启动 DeepSeek Harness…", detail: "首次启动可能需要几秒钟。", spinning: true))
-        harness.onReady = { [weak self] url in self?.open(url) }
-        harness.onExit = { [weak self] message in self?.showError(message) }
+        configureHarness()
     }
 
     required init?(coder: NSCoder) { nil }
 
     func start() {
         do {
-            let resources = try HarnessResources.load()
-            let hasLocalMarket = try detectsLocalMarket(resources: resources)
-            let mode: MarketLaunchMode
-            if hasLocalMarket {
-                guard let choice = chooseMarketSource() else {
-                    NSApp.terminate(nil)
-                    return
-                }
-                mode = choice
-            } else {
-                mode = .bundled
-            }
-            try harness.start(resources: resources, mode: mode)
+            let loaded = try HarnessResources.load()
+            resources = loaded
+            try startHarness(resources: loaded)
         } catch {
-            showError(error.localizedDescription)
+            handleStartupFailure(error.localizedDescription)
         }
     }
 
     func stop() { harness.stop() }
+
+    func showMainWindow() {
+        guard let window else { return }
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard let delegate = NSApp.delegate as? AppDelegate, !delegate.isQuitting else { return true }
+        sender.orderOut(nil)
+        return false
+    }
+
+    private func configureHarness() {
+        harness.onReady = { [weak self] url in self?.open(url) }
+        harness.onExit = { [weak self] message, wasReady in
+            guard let self else { return }
+            if wasReady {
+                self.showError(message)
+            } else {
+                self.handleStartupFailure(message)
+            }
+        }
+    }
+
+    private func startHarness(resources: HarnessResources) throws {
+        let hasLocalMarket = try detectsLocalMarket(resources: resources)
+        let hadLocalMarket = lastHadLocalMarket ?? false
+        let mode: MarketLaunchMode
+        if hasLocalMarket {
+            if let previous = lastMarketChoice, hadLocalMarket {
+                mode = previous
+            } else {
+                guard let choice = chooseMarketSource() else {
+                    NSApp.terminate(nil)
+                    return
+                }
+                lastMarketChoice = choice
+                mode = choice
+            }
+        } else {
+            lastMarketChoice = nil
+            mode = .bundled
+        }
+        lastHadLocalMarket = hasLocalMarket
+        try harness.start(resources: resources, mode: mode)
+    }
 
     private func chooseMarketSource() -> MarketLaunchMode? {
         let alert = NSAlert()
@@ -287,11 +481,95 @@ private final class MainWindowController: NSWindowController, WKNavigationDelega
         view.load(URLRequest(url: url))
     }
 
-    private func showError(_ message: String) {
-        replaceContent(with: statusView(title: "无法启动应用", detail: message, spinning: false))
+    private func handleStartupFailure(_ message: String) {
+        var candidates: [WebPluginCandidate] = []
+        if let resources {
+            do {
+                candidates = try diagnoseWebPlugins(resources: resources, failureText: message).candidates
+            } catch {
+                // 诊断失败只隐藏“卸载并重启”入口，原始启动错误仍完整展示。
+            }
+        }
+        showStartupFailure(message, candidates: candidates)
     }
 
-    private func statusView(title: String, detail: String, spinning: Bool) -> NSView {
+    private func showStartupFailure(_ message: String, candidates: [WebPluginCandidate]) {
+        pendingUninstall = candidates.isEmpty ? nil : candidates
+        var actions: [NSView] = []
+        let title: String
+        let detail: String
+        if candidates.isEmpty {
+            title = "无法启动应用"
+            detail = message
+        } else {
+            let names = candidates.map(\.name).joined(separator: "、")
+            title = "启动时检测到插件不兼容"
+            detail = "以下已安装插件与当前 DeepSeek Harness 版本不兼容，导致启动失败：\n\n\(names)\n\n"
+                + "可以卸载这些插件后自动重启；会话、设置和凭据不会受影响。\n\n失败详情：\n\(message)"
+            let uninstallTitle = candidates.count == 1 ? "卸载「\(candidates[0].name)」并重启" : "卸载不兼容插件并重启"
+            actions.append(actionButton(title: uninstallTitle, action: #selector(uninstallIncompatiblePlugins)))
+        }
+        actions.append(actionButton(title: "备份并重置 Web profile，然后重新打开", action: #selector(recoverWebProfile)))
+        replaceContent(with: statusView(title: title, detail: detail, spinning: false, actions: actions))
+    }
+
+    private func showError(_ message: String) {
+        pendingUninstall = nil
+        let button = actionButton(title: "备份并重置 Web profile，然后重新打开", action: #selector(recoverWebProfile))
+        replaceContent(with: statusView(title: "无法启动应用", detail: message, spinning: false, actions: [button]))
+    }
+
+    @objc private func uninstallIncompatiblePlugins() {
+        guard let resources, let names = pendingUninstall?.map(\.name), !names.isEmpty else { return }
+        replaceContent(with: statusView(
+            title: "正在卸载不兼容插件…",
+            detail: "将卸载：\n\(names.joined(separator: "、"))\n\n卸载完成后会自动重启应用。",
+            spinning: true
+        ))
+        harness.stop()
+        do {
+            try removeWebPlugins(resources: resources, names: names)
+            pendingUninstall = nil
+            harnessOrigin = nil
+            webView = nil
+            harness = HarnessProcess()
+            configureHarness()
+            replaceContent(with: statusView(title: "正在重新启动 DeepSeek Harness…", detail: "不兼容插件已卸载，正在重新启动。", spinning: true))
+            try startHarness(resources: resources)
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
+    @objc private func recoverWebProfile() {
+        guard let resources else { return }
+        replaceContent(with: statusView(title: "正在恢复本地环境…", detail: "系统会先备份 Web profile；会话、设置、凭据和个人 preset 不受影响。", spinning: true))
+        harness.stop()
+        do {
+            let result = try resetWebProfile(resources: resources)
+            pendingUninstall = nil
+            lastMarketChoice = nil
+            lastHadLocalMarket = nil
+            harnessOrigin = nil
+            webView = nil
+            harness = HarnessProcess()
+            configureHarness()
+            let detail = result.backup.map { "旧 Web profile 已备份到：\n\($0)" } ?? "未发现需要备份的 Web profile，正在重新启动。"
+            replaceContent(with: statusView(title: "正在重新启动 DeepSeek Harness…", detail: detail, spinning: true))
+            try startHarness(resources: resources)
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
+    private func actionButton(title: String, action: Selector) -> NSButton {
+        let button = NSButton(title: title, target: self, action: action)
+        button.bezelStyle = .rounded
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }
+
+    private func statusView(title: String, detail: String, spinning: Bool, actions: [NSView] = []) -> NSView {
         let wrapper = NSView()
         let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = .systemFont(ofSize: 22, weight: .semibold)
@@ -307,6 +585,9 @@ private final class MainWindowController: NSWindowController, WKNavigationDelega
         stack.spacing = 12
         stack.alignment = .centerX
         stack.translatesAutoresizingMaskIntoConstraints = false
+        for action in actions {
+            stack.addArrangedSubview(action)
+        }
         if spinning {
             let indicator = NSProgressIndicator()
             indicator.style = .spinning
@@ -373,10 +654,13 @@ private final class MainWindowController: NSWindowController, WKNavigationDelega
 
 private final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: MainWindowController?
+    private var statusItem: NSStatusItem?
+    var isQuitting = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         installMenu()
+        installStatusItem()
         let controller = MainWindowController()
         self.controller = controller
         controller.showWindow(nil)
@@ -384,9 +668,72 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.start()
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        isQuitting = true
+        return .terminateNow
+    }
 
-    func applicationWillTerminate(_ notification: Notification) { controller?.stop() }
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showMainWindow()
+        return true
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        controller?.stop()
+        statusItem = nil
+    }
+
+    private func installStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let button = item.button
+        button?.image = Self.statusImage()
+        button?.imagePosition = .imageOnly
+        button?.toolTip = appName
+        button?.target = self
+        button?.action = #selector(statusItemClicked(_:))
+        button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        statusItem = item
+    }
+
+    private static func statusImage() -> NSImage {
+        if let icon = NSImage(named: NSImage.applicationIconName) {
+            icon.size = NSSize(width: 18, height: 18)
+            return icon
+        }
+        return NSImage(size: NSSize(width: 18, height: 18), flipped: false) { rect in
+            NSColor.labelColor.setFill()
+            rect.fill()
+            return true
+        }
+    }
+
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        guard let event = NSApp.currentEvent, event.type == .rightMouseUp else {
+            showMainWindow()
+            return
+        }
+        let menu = NSMenu()
+        let open = NSMenuItem(title: "显示 DeepSeek Harness", action: #selector(showMainWindowFromMenu(_:)), keyEquivalent: "")
+        open.target = self
+        menu.addItem(open)
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "退出 DeepSeek Harness", action: #selector(quitFromStatusItem(_:)), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+        statusItem?.menu = menu
+        statusItem?.button?.performClick(nil)
+        statusItem?.menu = nil
+    }
+
+    @objc private func showMainWindowFromMenu(_ sender: Any?) { showMainWindow() }
+
+    @objc private func quitFromStatusItem(_ sender: Any?) { NSApp.terminate(nil) }
+
+    func showMainWindow() {
+        controller?.showMainWindow()
+    }
 
     private func installMenu() {
         let menu = NSMenu()

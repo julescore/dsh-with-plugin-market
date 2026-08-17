@@ -1,0 +1,5 @@
+# dsh bundle layer for the standalone vision-image-model plugin.
+# The row name resolves the package root export (dsh/index.js).
+- insert:
+    - id: vision-image-model
+      name: dsh-vision-image-model

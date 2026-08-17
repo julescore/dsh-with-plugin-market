@@ -4,7 +4,11 @@
 
 本目录将既有 DeepSeek Harness Web 应用打包成名为 **DeepSeek Harness** 的原生 Windows 10/11 x64 桌面应用。Git 仓库继续叫 `dsh-with-plugin-market`；仓库名不是应用品牌。
 
-应用使用 .NET 8 WinForms 与 Microsoft Edge WebView2 外壳，内置 Node.js 24.19.0、pnpm 11.7.0、Harness 生产运行时和 `dshmarket@1.2.3`，并生成 Inno Setup 安装程序。Windows 通常已内置 WebView2 Runtime；如果缺失，应用会明确提示安装要求。
+应用使用 .NET 8 WinForms 与 Microsoft Edge WebView2 外壳，内置 Node.js 24.19.0、pnpm 11.7.0、Harness 生产运行时、`dshmarket@1.2.3`、仓库自带的 `vision-image-model` 插件，以及经过校验和锁定的 **Anchored Standard (experimental)** 与 **Zero-Anchored Standard (experimental)** 社区 preset，并生成 Inno Setup 安装程序。图片识别插件提供设置卡片和只接受本地路径的 `vision_read_image` 工具。新建会话时可以选择这些 preset，但 Standard 仍是默认模式。Windows 通常已内置 WebView2 Runtime；如果缺失，应用会明确提示安装要求。
+
+应用启动时会在通知区域（系统托盘）安装图标。点窗口关闭按钮只隐藏窗口，Harness 进程继续运行；点托盘图标可重新打开窗口。通过托盘菜单“退出”才会停止后台进程。
+
+市场安装和更新只有在完整 Web profile 组合成功后才会被接受；否则会恢复此前的依赖清单、lockfile、构建策略和安装解析结果。启动错误页可以只把无效 Web profile 移到 `$DSH_HOME/profile-backups/` 并重新启动，同时保留会话、设置、凭据、个人 preset 和其他 profile。当启动诊断能定位到具体插件时，错误页会先列出插件名并提供“卸载并自动重启”，整体重置 profile 只作为兜底。
 
 在 Windows 上构建和验证：
 
@@ -19,4 +23,4 @@ pnpm run verify:windows
 .artifacts/windows/DeepSeek-Harness-<version>-windows-x64-setup.exe
 ```
 
-`verify:windows` 会静默安装到隔离目录，运行外壳自检，检查内置 Node 和 pnpm，启动 Harness、读取市场目录、安装和卸载精选 `dsh-web-ui` 合集，并检查插件市场冲突的两种组合。
+`verify:windows` 会静默安装到隔离目录，运行外壳自检，检查内置 Node、pnpm、安装包内恢复工具的行为，以及内置图片识别包、配置、设置客户端和工具声明，验证两个社区 preset 的行为，启动 Harness，通过 Host API 证明两个 preset 可发现且可挂载，读取市场目录、安装和卸载精选 `dsh-web-ui` 合集，并检查插件市场冲突的两种组合。

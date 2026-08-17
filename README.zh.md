@@ -14,10 +14,11 @@
 - 自包含运行环境，内置 Node.js、pnpm 与 `dshmarket`。
 - 内置插件市场，支持搜索、分类、主题、安装、更新与卸载。
 - 对精选插件提供一键安装，并为 `dsh-web-ui` 合集提供经过验证的安全映射。
+- 内置固定来源的社区 preset：**Anchored Standard (experimental)** 与 **Zero-Anchored Standard (experimental)**；新建会话时可选，但不会改变 Standard 默认值。
 - 本地插件市场与安装包市场冲突时让用户选择来源，保证同一时间只启用一个市场。
 - 每次发行前在对应平台的隔离环境中验证安装包。
 
-社区插件会在你的电脑上执行第三方代码。安装前请自行检查并信任插件源码；被目录收录不代表安全背书。构建脚本默认保持禁用，除非安装包的精确规则或用户决定明确允许。
+社区插件和 preset 会在你的电脑上执行第三方代码。使用前请自行检查并信任其源码；被发行版收录不代表安全背书。构建脚本默认保持禁用，除非安装包的精确规则或用户决定明确允许。两个内置社区 preset 保留实验标识，也不会被设为默认。
 
 <a id="run"></a>
 
@@ -28,7 +29,7 @@
 - **macOS 15+ Apple Silicon：**打开 `.dmg`，将 **DeepSeek Harness** 拖入“应用程序”。社区构建使用 ad-hoc 签名，尚未经过 Apple 公证。
 - **Windows 10/11 x64：**运行 `windows-x64-setup.exe` 安装程序。应用需要 Microsoft Edge WebView2 Runtime，受支持的 Windows 通常已内置。
 
-启动后进入**设置 → 插件市场**即可安装插件。设置、会话、凭据与 profile 插件仍使用标准的 `.dsh` 用户目录，因此桌面应用和 `dsh` CLI 会共享本地状态。
+启动后进入**设置 → 插件市场**即可安装插件。新建会话时可选择 **Anchored Standard (experimental)** 或 **Zero-Anchored Standard (experimental)**，体验内置的 [xiaobright/dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) preset；Standard 仍是默认模式。设置、会话、凭据与 profile 插件仍使用标准的 `.dsh` 用户目录，因此桌面应用和 `dsh` CLI 会共享本地状态。
 
 <a id="run-from-source"></a>
 

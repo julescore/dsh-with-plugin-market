@@ -1,0 +1,15 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "outDir": "../lib/test-types",
+    "noEmit": true,
+    "composite": false,
+    "incremental": false
+  },
+  "include": [
+    "*.ts",
+    "../scripts/reset-web-profile.d.mts",
+    "../scripts/diagnose-web-plugins.d.mts"
+  ]
+}

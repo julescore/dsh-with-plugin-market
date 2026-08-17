@@ -14,10 +14,11 @@ Install one application, open **Settings → Plugin Market**, and browse or inst
 - A self-contained runtime with Node.js, pnpm, and `dshmarket` included.
 - A built-in plugin marketplace with search, categories, themes, install, update, and uninstall actions.
 - One-click installation for curated plugins, including a distribution-safe mapping for the `dsh-web-ui` collection.
+- The pinned community presets **Anchored Standard (experimental)** and **Zero-Anchored Standard (experimental)**, selectable for new sessions without changing the Standard default.
 - A startup choice when a local plugin market conflicts with the packaged market, so exactly one market is active.
 - Isolated platform packaging verification before a release is accepted.
 
-Community plugins execute third-party code on your computer. Review and trust a plugin's source before installing it. Registry inclusion is not a security endorsement, and build scripts remain blocked unless an explicit distribution rule or user decision allows them.
+Community plugins and presets execute third-party code on your computer. Review and trust their source before using them. Distribution inclusion is not a security endorsement, and build scripts remain blocked unless an explicit distribution rule or user decision allows them. The two bundled community presets remain marked experimental and are not selected by default.
 
 <a id="run"></a>
 
@@ -28,7 +29,7 @@ Download the latest installer from [GitHub Releases](https://github.com/julescor
 - **macOS 15+ Apple Silicon:** open the `.dmg`, then drag **DeepSeek Harness** into Applications. The community build is ad-hoc signed and is not Apple-notarized.
 - **Windows 10/11 x64:** run the `windows-x64-setup.exe` installer. Microsoft Edge WebView2 Runtime is required and is normally included with supported Windows versions.
 
-After launch, open **Settings → Plugin Market** to install plugins. Settings, sessions, credentials, and profile plugins use the normal `.dsh` user directory, so the desktop application and `dsh` CLI share local state.
+After launch, open **Settings → Plugin Market** to install plugins. Choose **Anchored Standard (experimental)** or **Zero-Anchored Standard (experimental)** when creating a new session to try the bundled [xiaobright/dsh-anchored-standard](https://github.com/xiaobright/dsh-anchored-standard) presets; Standard remains the default. Settings, sessions, credentials, and profile plugins use the normal `.dsh` user directory, so the desktop application and `dsh` CLI share local state.
 
 <a id="run-from-source"></a>
 
