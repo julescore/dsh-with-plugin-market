@@ -167,6 +167,8 @@ try {
     }
     $index = Invoke-WebRequest -UseBasicParsing -Uri "$url/" -TimeoutSec 30
     if (-not $index.Content.Contains('"id":"dsh-vision-image-model-bundled"')) { throw 'Windows verify: bundled vision settings client is absent from the Web boot graph' }
+    node (Join-Path $desktopDir 'scripts/verify-vision-client.mjs') (Join-Path $installDir 'runtime/node_modules/dsh-vision-image-model-bundled/dsh/client.js') 'dsh-vision-image-model-bundled'
+    if ($LASTEXITCODE -ne 0) { throw 'Windows verify: bundled vision client module registration is invalid' }
     $visionSource = Get-Content -Raw (Join-Path $installDir 'runtime/node_modules/dsh-vision-image-model-bundled/dsh/index.js')
     if (-not $visionSource.Contains("const DEFAULT_TOOL_NAME = 'vision_read_image'")) { throw 'Windows verify: bundled vision tool declaration is absent' }
     $presetList = Invoke-RpcJson $url 'agentPreset.list' @{} 'desktop-preset-list'

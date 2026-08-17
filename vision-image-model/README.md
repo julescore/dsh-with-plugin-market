@@ -18,7 +18,7 @@ An empty selection, unavailable route, rejected model request, or invalid model 
 
 ## Desktop distribution
 
-The macOS and Windows builders copy this folder into the application runtime as `dsh-vision-image-model-bundled`, add that alias to the runtime dependency closure, and always mount [`apps/desktop/resources/vision.patch.yml`](../apps/desktop/resources/vision.patch.yml). The application remains named **DeepSeek Harness**.
+The macOS and Windows builders copy this folder into the application runtime as `dsh-vision-image-model-bundled`, rewrite both the package manifest and prebundled browser client handoff to that alias, add it to the runtime dependency closure, and always mount [`apps/desktop/resources/vision.patch.yml`](../apps/desktop/resources/vision.patch.yml). The application remains named **DeepSeek Harness**.
 
 Run the focused tests with Node 24:
 

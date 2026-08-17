@@ -236,6 +236,9 @@ index=$(curl --fail --silent --show-error --max-time 15 "$url/")
   echo "macOS verify: bundled vision settings client is absent from the Web boot graph" >&2
   exit 1
 }
+"$node" "$desktop_dir/scripts/verify-vision-client.mjs" \
+  "$mounted_app/Contents/Resources/runtime/node_modules/dsh-vision-image-model-bundled/dsh/client.js" \
+  dsh-vision-image-model-bundled
 grep -Fq "const DEFAULT_TOOL_NAME = 'vision_read_image'"   "$mounted_app/Contents/Resources/runtime/node_modules/dsh-vision-image-model-bundled/dsh/index.js" || {
   echo "macOS verify: bundled vision tool declaration is absent" >&2
   exit 1

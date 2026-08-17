@@ -18,7 +18,7 @@
 
 ## 桌面发行版
 
-macOS 与 Windows 构建器会把本目录复制到应用运行时，固定别名为 `dsh-vision-image-model-bundled`，把该别名加入运行时依赖闭包，并始终挂载 [`apps/desktop/resources/vision.patch.yml`](../apps/desktop/resources/vision.patch.yml)。应用名称仍为 **DeepSeek Harness**。
+macOS 与 Windows 构建器会把本目录复制到应用运行时，固定别名为 `dsh-vision-image-model-bundled`，同时把包清单和预打包浏览器客户端 handoff 改成该别名，再将它加入运行时依赖闭包，并始终挂载 [`apps/desktop/resources/vision.patch.yml`](../apps/desktop/resources/vision.patch.yml)。应用名称仍为 **DeepSeek Harness**。
 
 使用 Node 24 运行聚焦测试：
 

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const source = join(root, 'vision-image-model')
 const installer = join(root, 'apps/desktop/scripts/install-vision-plugin.py')
+const clientVerifier = join(root, 'apps/desktop/scripts/verify-vision-client.mjs')
 const temporaryRoots: string[] = []
 
 function fixture(): { runtime: string; plugin: string } {
@@ -41,11 +42,32 @@ describe('desktop vision plugin installer', () => {
     expect(existsSync(join(target, 'dsh/local-image.js'))).toBe(true)
     expect(existsSync(join(target, 'test'))).toBe(false)
     expect(existsSync(join(target, 'stage-profile.sh'))).toBe(false)
+    expect(readFileSync(join(target, 'dsh/client.js'), 'utf8')).toContain('id: "dsh-vision-image-model-bundled"')
+    expect(readFileSync(join(target, 'dsh/client.js'), 'utf8')).not.toContain('id: "dsh-vision-image-model"')
+    expect(() => execFileSync(process.execPath, [
+      clientVerifier,
+      join(target, 'dsh/client.js'),
+      'dsh-vision-image-model-bundled',
+    ])).not.toThrow()
     const runtimeManifest = JSON.parse(readFileSync(join(runtime, 'package.json'), 'utf8')) as {
       dependencies: Record<string, unknown>
     }
     expect(runtimeManifest.dependencies['dsh-vision-image-model-bundled'])
       .toBe('file:node_modules/dsh-vision-image-model-bundled')
+  })
+
+  it('rejects a client that does not register the source package id exactly once', () => {
+    const { runtime, plugin } = fixture()
+    const client = join(plugin, 'dsh/client.js')
+    writeFileSync(client, readFileSync(client, 'utf8').replace(
+      'id: "dsh-vision-image-model"',
+      'id: "unexpected-vision-id"',
+    ))
+
+    const result = install(runtime, plugin)
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('test build: vision-image-model client module id is unexpected')
   })
 
   it('rejects an existing alias instead of overwriting it', () => {

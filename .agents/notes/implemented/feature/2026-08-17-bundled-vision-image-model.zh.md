@@ -10,13 +10,13 @@ Status: implemented
 
 ## Decision
 
-macOS 与 Windows 发行版会把仓库自带插件复制到封闭运行时，并使用固定别名 `dsh-vision-image-model-bundled`。安装脚本把该别名写入运行时依赖清单，使 profile 的模块 fallback 修复可以向 Loader 暴露它。两个原生外壳始终单独应用 `vision.patch.yml`；插件市场冲突选择不会启用、禁用或替换图片识别能力。
+macOS 与 Windows 发行版会把仓库自带插件复制到封闭运行时，并使用固定别名 `dsh-vision-image-model-bundled`。安装脚本会同时把别名应用到包清单与预打包浏览器客户端模块的 handoff，再写入运行时依赖清单，使 profile 的模块 fallback 修复可以向 Loader 暴露一致的身份。两个原生外壳始终单独应用 `vision.patch.yml`；插件市场冲突选择不会启用、禁用或替换图片识别能力。
 
 插件只接受本地路径。它通过 `ctx.fs` 按会话工作区解析路径，要求目标是普通文件，执行有大小上限的字节读取，并发出 `fs/observed`。远程图片必须先通过经过批准的网络工具下载。图片字节先持久化到附件存储，再调用用户精确选择的 provider/model，不做故障转移。
 
 渲染后的工具结果包含附件 id、解析后路径、媒体类型、字节数、选定 provider/model 与提示词。附件持久化后的错误也包含同样证据，因此重放不依赖会话日志不会保留的成功 canonical value。
 
-安装包验证器要求复制后的包和 patch 存在，组合对应配置行，启动 Host，读取设置接口并检查 Web 启动图。聚焦测试覆盖有界文件读取与桌面安装器；ToolRuntime smoke 证明全局工具对 Agent scope 可见。
+安装包验证器要求复制后的包和 patch 存在，真实执行浏览器客户端并验证准确的 Loader handoff，组合对应配置行，启动 Host，读取设置接口并检查 Web 启动图。聚焦测试覆盖有界文件读取与桌面安装器；ToolRuntime smoke 证明全局工具对 Agent scope 可见。
 
 ## Alternatives considered
 

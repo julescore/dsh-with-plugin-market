@@ -10,13 +10,13 @@ The desktop repository contained an image-model plugin, but neither platform pac
 
 ## Decision
 
-The macOS and Windows distributions copy the repository-owned plugin into the closed runtime under the fixed `dsh-vision-image-model-bundled` alias. The installer records that alias in the runtime dependency manifest so profile module-fallback repair exposes it to Loader. Both native shells always apply a separate `vision.patch.yml`; plugin-market conflict choices do not enable, disable, or replace vision support.
+The macOS and Windows distributions copy the repository-owned plugin into the closed runtime under the fixed `dsh-vision-image-model-bundled` alias. The installer applies the alias to both the package manifest and the prebundled browser client module handoff, then records it in the runtime dependency manifest so profile module-fallback repair exposes one consistent identity to Loader. Both native shells always apply a separate `vision.patch.yml`; plugin-market conflict choices do not enable, disable, or replace vision support.
 
 The plugin accepts local paths only. It resolves the session workspace through `ctx.fs`, requires a regular file, performs a bounded byte read, and emits `fs/observed`. Remote images must first be downloaded through an approved network tool. Image bytes are persisted in the attachment store before the exact selected provider/model is called, with no failover.
 
 The rendered tool result includes the attachment id, resolved path, media type, byte count, selected provider/model, and prompt. Errors after attachment persistence include the same evidence, so replay does not depend on the successful canonical value, which the session log does not retain.
 
-The package verifiers require the copied package and patch, compose the row, start the Host, query the settings route, and inspect the Web boot graph. Focused tests cover bounded filesystem admission and the desktop installer; a ToolRuntime smoke proves the global tool is visible from an agent scope.
+The package verifiers require the copied package and patch, execute the browser client to verify its exact Loader handoff, compose the row, start the Host, query the settings route, and inspect the Web boot graph. Focused tests cover bounded filesystem admission and the desktop installer; a ToolRuntime smoke proves the global tool is visible from an agent scope.
 
 ## Alternatives considered
 

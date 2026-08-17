@@ -8,6 +8,8 @@ import sys
 
 ALIAS = "dsh-vision-image-model-bundled"
 SOURCE_NAME = "dsh-vision-image-model"
+CLIENT_SOURCE_ID = f'id: "{SOURCE_NAME}"'
+CLIENT_ALIAS_ID = f'id: "{ALIAS}"'
 REQUIRED_FILES = {
     "package.json",
     "dsh/index.js",
@@ -37,6 +39,10 @@ def main() -> None:
     missing = sorted(path for path in REQUIRED_FILES if not (source / path).is_file())
     if missing:
         fail(platform, f"vision-image-model source is incomplete: {', '.join(missing)}")
+    client_path = source / "dsh/client.js"
+    client_source = client_path.read_text(encoding="utf-8")
+    if client_source.count(CLIENT_SOURCE_ID) != 1 or CLIENT_ALIAS_ID in client_source:
+        fail(platform, "vision-image-model client module id is unexpected")
     symlinks = sorted(path.relative_to(source).as_posix() for path in source.rglob("*") if path.is_symlink())
     if symlinks:
         fail(platform, f"vision-image-model source contains symlinks: {', '.join(symlinks)}")
@@ -61,6 +67,9 @@ def main() -> None:
         target,
         ignore=shutil.ignore_patterns("test", "stage-profile.sh", "cordis.patch.yml"),
     )
+    bundled_client_path = target / "dsh/client.js"
+    bundled_client = bundled_client_path.read_text(encoding="utf-8").replace(CLIENT_SOURCE_ID, CLIENT_ALIAS_ID, 1)
+    bundled_client_path.write_text(bundled_client, encoding="utf-8")
     bundled_manifest_path = target / "package.json"
     bundled_manifest = json.loads(bundled_manifest_path.read_text(encoding="utf-8"))
     bundled_manifest["name"] = ALIAS
