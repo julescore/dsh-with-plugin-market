@@ -23,6 +23,7 @@ internal static class Program
                     product = ProductName,
                     node = File.Exists(resources.Node),
                     launcher = File.Exists(resources.Launcher),
+                    visionPatch = File.Exists(resources.VisionPatch),
                     marketPatch = File.Exists(resources.MarketPatch),
                     marketConflictPatch = File.Exists(resources.MarketConflictPatch),
                     recoveryScript = File.Exists(resources.RecoveryScript),
@@ -49,6 +50,7 @@ internal sealed record HarnessResources(
     string Root,
     string Node,
     string Launcher,
+    string VisionPatch,
     string MarketPatch,
     string MarketConflictPatch,
     string RecoveryScript,
@@ -61,11 +63,12 @@ internal sealed record HarnessResources(
             root,
             Path.Combine(root, "node", "node.exe"),
             Path.Combine(root, "runtime", "lib", "bin.js"),
+            Path.Combine(root, "desktop", "vision.patch.yml"),
             Path.Combine(root, "desktop", "market.patch.yml"),
             Path.Combine(root, "desktop", "market-conflict.patch.yml"),
             Path.Combine(root, "desktop", "reset-web-profile.mjs"),
             Path.Combine(root, "desktop", "diagnose-web-plugins.mjs"));
-        foreach (var path in new[] { resources.Node, resources.Launcher, resources.MarketPatch, resources.MarketConflictPatch, resources.RecoveryScript, resources.DiagnosisScript })
+        foreach (var path in new[] { resources.Node, resources.Launcher, resources.VisionPatch, resources.MarketPatch, resources.MarketConflictPatch, resources.RecoveryScript, resources.DiagnosisScript })
         {
             if (!File.Exists(path)) throw new FileNotFoundException($"Required application resource is missing: {path}", path);
         }
@@ -390,7 +393,7 @@ internal sealed class MainForm : Form
         harnessOrigin = null;
         harnessReady = false;
         lock (errorTail) errorTail.Clear();
-        var arguments = new List<string> { loaded.Launcher, "web" };
+        var arguments = new List<string> { loaded.Launcher, "web", "--patch", loaded.VisionPatch };
         if (mode == MarketLaunchMode.Bundled) arguments.AddRange(new[] { "--patch", loaded.MarketPatch });
         if (mode == MarketLaunchMode.BundledReplacingLocal) arguments.AddRange(new[] { "--patch", loaded.MarketConflictPatch });
         arguments.AddRange(new[] { "--port", "0" });

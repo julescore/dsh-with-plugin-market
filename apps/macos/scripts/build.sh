@@ -106,7 +106,10 @@ dependencies["dshmarket-bundled"] = expected
 manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 PY_MARKET_DEPENDENCY
 python3 "$desktop_dir/scripts/install-agent-presets.py" "$runtime" "$desktop_dir" macOS
+python3 "$desktop_dir/scripts/install-vision-plugin.py" "$runtime" "$root/vision-image-model" macOS
 node "$desktop_dir/scripts/verify-agent-presets.mjs" "$runtime/config/agent-presets"
+node --check "$runtime/node_modules/dsh-vision-image-model-bundled/dsh/index.js"
+node --check "$runtime/node_modules/dsh-vision-image-model-bundled/dsh/local-image.js"
 
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/node/bin" "$app/Contents/Resources/runtime" \
   "$app/Contents/Resources/pnpm" "$app/Contents/Resources/desktop"
@@ -128,6 +131,7 @@ bin_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 exec "$bin_dir/node" "$bin_dir/../../pnpm/bin/pnpm.cjs" "$@"
 PNPM_LAUNCHER
 chmod 755 "$app/Contents/Resources/node/bin/pnpm"
+cp "$desktop_dir/resources/vision.patch.yml" "$app/Contents/Resources/desktop/vision.patch.yml"
 cp "$desktop_dir/resources/market.patch.yml" "$app/Contents/Resources/desktop/market.patch.yml"
 cp "$desktop_dir/resources/market-conflict.patch.yml" "$app/Contents/Resources/desktop/market-conflict.patch.yml"
 cp "$desktop_dir/scripts/reset-web-profile.mjs" "$app/Contents/Resources/desktop/reset-web-profile.mjs"

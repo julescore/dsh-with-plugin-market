@@ -12,13 +12,11 @@
 // installation-owned flat module fallback, exactly like an out-of-tree dsh
 // plugin is supposed to.
 
-import { lookup } from 'node:dns/promises'
-import { isIP } from 'node:net'
 import { basename } from 'node:path'
-import { readFile } from 'node:fs/promises'
 import z from '@deepseek-ai/schemastery'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { describeImageModelCandidates } from './candidates.js'
+import { readLocalImage } from './local-image.js'
 import {
   ACCEPTED_MEDIA_TYPES,
   MAX_IMAGE_BYTES,
@@ -29,7 +27,7 @@ import {
 } from './vision.js'
 
 export const name = 'vision-image-model'
-export const inject = ['tools', 'attachments', 'llm']
+export const inject = ['tools', 'attachments', 'llm', 'fs']
 
 const NS = settingsNamespace('vision-image-model')
 const SETTINGS_SCHEMA = z.object({
@@ -39,7 +37,6 @@ const SETTINGS_SCHEMA = z.object({
 
 const ROUTE_PATH = '/vision-image-model/config'
 const DEFAULT_TOOL_NAME = 'vision_read_image'
-const MAX_REMOTE_REDIRECTS = 5
 const MAX_BODY_BYTES = 64 * 1024
 
 const OUTPUT_SCHEMA = {
@@ -56,11 +53,27 @@ const OUTPUT_SCHEMA = {
           text: { type: 'string' },
         },
         required: ['label', 'text'],
+        additionalProperties: false,
       },
     },
     uncertain: { type: 'array', items: { type: 'string' } },
+    evidence: {
+      type: 'object',
+      properties: {
+        attachmentId: { type: 'string' },
+        mediaType: { type: 'string' },
+        bytes: { type: 'number' },
+        path: { type: 'string' },
+        provider: { type: 'string' },
+        model: { type: 'string' },
+        prompt: { type: 'string' },
+      },
+      required: ['attachmentId', 'mediaType', 'bytes', 'path', 'provider', 'model', 'prompt'],
+      additionalProperties: false,
+    },
   },
-  required: ['summary', 'ocrText', 'layout', 'uncertain'],
+  required: ['summary', 'ocrText', 'layout', 'uncertain', 'evidence'],
+  additionalProperties: false,
 }
 
 /** Read the plugin's composition entry as the no-settings fallback. */
@@ -93,15 +106,10 @@ function installSettings(ctx, fallback) {
     ctx.inject(['settings'], (sctx) => {
       const settings = sctx.get?.('settings') ?? sctx.settings
       if (!settings || typeof settings.register !== 'function') return
-      try {
-        scope = settings.register(NS, SETTINGS_SCHEMA, {
-          base: fallback,
-          applies: 'live',
-        })
-      } catch (error) {
-        console.error(`[vision-image-model] settings registration failed: ${error}`)
-        return
-      }
+      scope = settings.register(NS, SETTINGS_SCHEMA, {
+        base: fallback,
+        applies: 'live',
+      })
       // When the settings provider detaches, fall back to the composition
       // entry instead of holding a stale scope.
       sctx.effect?.(() => () => {
@@ -162,85 +170,15 @@ async function readRequestBody(req, signal) {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-/** Validate one address against loopback, private, link-local, and reserved ranges. */
-function unsafeAddress(address) {
-  if (isIP(address) === 0) return true
-  if (isIP(address) === 4) {
-    const [a, b] = address.split('.').map(Number)
-    if (a === 0 || a === 10 || a === 127) return true
-    if (a === 169 && b === 254) return true
-    if (a === 172 && b >= 16 && b <= 31) return true
-    if (a === 192 && b === 168) return true
-    if (a === 100 && b >= 64 && b <= 127) return true
-    if (a >= 224) return true
-    return false
-  }
-  const lowered = address.toLowerCase()
-  if (lowered === '::' || lowered === '::1' || lowered.startsWith('fc') || lowered.startsWith('fd')) return true
-  if (lowered.startsWith('fe8') || lowered.startsWith('fe9') || lowered.startsWith('fea') || lowered.startsWith('feb')) return true
-  if (lowered.startsWith('ff')) return true
-  return false
-}
-
-/**
- * Fetch a remote image with per-hop private/reserved address rejection and a
- * size cap. This is a best-effort SSRF guard, not DNS pinning: a hostile
- * rebinding race is out of scope for this isolated plugin.
- */
-async function fetchRemoteImage(url, signal) {
-  let current = new URL(url)
-  for (let hop = 0; hop <= MAX_REMOTE_REDIRECTS; hop += 1) {
-    if (current.protocol !== 'https:' && current.protocol !== 'http:') {
-      throw new Error('only http(s) image URLs are supported')
-    }
-    const addresses = await lookup(current.hostname, { all: true, signal })
-    for (const record of addresses) {
-      if (unsafeAddress(record.address)) {
-        throw new Error(`refusing to fetch ${current.hostname}: it resolves to a private or reserved address`)
-      }
-    }
-    const response = await fetch(current, { redirect: 'manual', signal })
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get('location')
-      await response.body?.cancel().catch(() => {})
-      if (!location) throw new Error(`redirect (${response.status}) without a location header`)
-      if (hop === MAX_REMOTE_REDIRECTS) throw new Error(`too many redirects (max ${MAX_REMOTE_REDIRECTS})`)
-      current = new URL(location, current)
-      continue
-    }
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => {})
-      throw new Error(`image download failed (${response.status})`)
-    }
-    const declared = Number(response.headers.get('content-length'))
-    if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) {
-      await response.body?.cancel().catch(() => {})
-      throw new Error(`remote image is ${declared} bytes, over the ${MAX_IMAGE_BYTES}-byte limit`)
-    }
-    const buffer = Buffer.from(await response.arrayBuffer())
-    if (buffer.length > MAX_IMAGE_BYTES) {
-      throw new Error(`remote image exceeds the ${MAX_IMAGE_BYTES}-byte limit`)
-    }
-    return buffer
-  }
-  throw new Error('too many redirects')
-}
-
-async function loadImageBytes(source, signal) {
-  if (/^https?:\/\//i.test(source)) {
-    return fetchRemoteImage(source, signal)
-  }
-  const buffer = await readFile(source)
-  if (buffer.length > MAX_IMAGE_BYTES) {
-    throw new Error(`image is ${buffer.length} bytes, over the ${MAX_IMAGE_BYTES}-byte limit`)
-  }
-  return buffer
-}
-
 /** Tool-returned evidence rendered for the transcript. */
 function renderEvidence(_args, value) {
   const lines = []
-  if (value?.summary) lines.push(value.summary)
+  if (value?.evidence) {
+    lines.push(
+      `Image evidence: attachment=${value.evidence.attachmentId}; type=${value.evidence.mediaType}; bytes=${value.evidence.bytes}; path=${value.evidence.path}; model=${value.evidence.provider}/${value.evidence.model}; prompt=${JSON.stringify(value.evidence.prompt)}`,
+    )
+  }
+  if (value?.summary) lines.push('', value.summary)
   if (value?.ocrText) lines.push('', 'Text:', value.ocrText)
   if (Array.isArray(value?.layout) && value.layout.length > 0) {
     lines.push('', 'Layout:')
@@ -307,13 +245,13 @@ function registerTool(ctx, source, config = {}) {
   const tool = {
     name: toolName,
     description:
-      'Read an image using the image model configured in Settings (vision-image-model). Use whenever the conversation references an image the current chat model cannot see: pass a local file path or an http(s) URL. Returns structured evidence: summary, verbatim OCR text, layout regions in reading order, and uncertainty notes. The exact selected model is used; failures are reported and never fail over to another model.',
+      'Read a local image using the image model configured in Settings (vision-image-model). Use whenever the conversation references a local image the current chat model cannot see. Returns structured evidence: summary, verbatim OCR text, layout regions in reading order, and uncertainty notes. The exact selected model is used; failures are reported and never fail over to another model.',
     parameters: {
       type: 'object',
       properties: {
         path: {
           type: 'string',
-          description: 'Absolute local file path or http(s) URL of the image',
+          description: 'Local image path, resolved from the current session workspace',
         },
         prompt: {
           type: 'string',
@@ -321,6 +259,7 @@ function registerTool(ctx, source, config = {}) {
         },
       },
       required: ['path'],
+      additionalProperties: false,
     },
     output: {
       schema: OUTPUT_SCHEMA,
@@ -349,37 +288,55 @@ function registerTool(ctx, source, config = {}) {
         throw new Error(`${toolName} needs a non-empty string "path".`)
       }
 
-      const bytes = await loadImageBytes(sourcePath, exec.signal)
+      const byteCap = Math.min(
+        MAX_IMAGE_BYTES,
+        ctx.attachments.imageLimits.maxImageBytes,
+        ctx.attachments.imageLimits.maxMessageImageBytes,
+      )
+      const { target, data } = await readLocalImage(ctx, sourcePath, exec, byteCap)
+      const bytes = Buffer.from(data)
       const mediaType = sniffImageMediaType(bytes)
       if (mediaType === undefined) {
-        throw new Error(`content of ${sourcePath} is not a recognized image (${ACCEPTED_MEDIA_TYPES.join(', ')})`)
+        throw new Error(`content of ${target.displayPath} is not a recognized image (${ACCEPTED_MEDIA_TYPES.join(', ')})`)
       }
 
       const attachment = await ctx.attachments.saveImage({
         data: bytes,
         mediaType,
-        name: basename(sourcePath.split('?')[0] ?? 'image'),
+        name: basename(target.displayPath),
       })
 
-      const text = await collectAnswer(ctx.llm.stream({
+      const evidence = {
+        attachmentId: attachment.attachmentId,
+        mediaType: attachment.mediaType,
+        bytes: attachment.bytes,
+        path: target.displayPath,
         provider: selection.provider,
         model: selection.model,
-        system: visionSystemPrompt(args.prompt),
-        messages: [imageMessage(args.prompt, attachment)],
-        signal: exec.signal,
-      }))
-
-      return normalizeVisionResult(parseVisionJson(text))
+        prompt: typeof args.prompt === 'string' ? args.prompt.trim() : '',
+      }
+      try {
+        const text = await collectAnswer(ctx.llm.stream({
+          provider: selection.provider,
+          model: selection.model,
+          system: visionSystemPrompt(args.prompt),
+          messages: [imageMessage(args.prompt, attachment)],
+          signal: exec.signal,
+        }))
+        return {
+          ...normalizeVisionResult(parseVisionJson(text)),
+          evidence,
+        }
+      } catch (error) {
+        throw new Error(
+          `image recognition failed after persisting attachment ${evidence.attachmentId} (${evidence.mediaType}, ${evidence.bytes} bytes) from ${evidence.path} for ${evidence.provider}/${evidence.model} with prompt ${JSON.stringify(evidence.prompt)}: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        )
+      }
     },
   }
 
-  try {
-    ctx.tools.register(tool)
-  } catch (error) {
-    // A duplicate of the chosen name is a composition issue, not a reason to
-    // take the settings feature down.
-    console.error(`[vision-image-model] ${toolName} registration skipped: ${error}`)
-  }
+  ctx.tools.register(tool)
 }
 
 /**
@@ -388,7 +345,7 @@ function registerTool(ctx, source, config = {}) {
  * and writes the settings namespace through the revision-fenced seam.
  */
 function registerConfigRoute(webCtx, rootCtx, source, getScope) {
-  webCtx.webServer.register({
+  webCtx.effect(() => webCtx.webServer.register({
     name: 'vision-image-model-config',
     kind: 'exact',
     path: ROUTE_PATH,
@@ -473,7 +430,7 @@ function registerConfigRoute(webCtx, rootCtx, source, getScope) {
       }
       sendJson(res, 405, { ok: false, error: 'method not allowed' })
     },
-  })
+  }), 'vision-image-model: settings route')
 }
 
 /** Cordis entry point. */
@@ -488,11 +445,7 @@ export function apply(ctx, config = {}) {
   // webServer exists only under the web profile; headless stays untouched.
   if (config.settingsCard !== false && typeof ctx.inject === 'function') {
     ctx.inject(['webServer'], (wctx) => {
-      try {
-        registerConfigRoute(wctx, ctx, source, getScope)
-      } catch (error) {
-        console.error(`[vision-image-model] settings card route skipped: ${error}`)
-      }
+      registerConfigRoute(wctx, ctx, source, getScope)
     })
   }
 }

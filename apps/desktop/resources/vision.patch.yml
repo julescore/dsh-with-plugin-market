@@ -1,0 +1,4 @@
+# desktop distribution layer: load the repository-owned vision tool and settings card.
+- insert:
+    - id: vision-image-model-packaged
+      name: dsh-vision-image-model-bundled

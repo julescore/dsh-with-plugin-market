@@ -81,7 +81,10 @@ $manifest.dependencies['dshmarket-bundled'] = $expectedMarket
 $manifest | ConvertTo-Json -Depth 100 | Set-Content -Encoding utf8NoBOM $manifestPath
 python (Join-Path $desktopDir 'scripts/assemble-runtime.py') $runtime $root Windows
 python (Join-Path $desktopDir 'scripts/install-agent-presets.py') $runtime $desktopDir Windows
+python (Join-Path $desktopDir 'scripts/install-vision-plugin.py') $runtime (Join-Path $root 'vision-image-model') Windows
 node (Join-Path $desktopDir 'scripts/verify-agent-presets.mjs') (Join-Path $runtime 'config/agent-presets')
+node --check (Join-Path $runtime 'node_modules/dsh-vision-image-model-bundled/dsh/index.js')
+node --check (Join-Path $runtime 'node_modules/dsh-vision-image-model-bundled/dsh/local-image.js')
 
 $publishDir = Join-Path $workRoot 'shell'
 dotnet publish (Join-Path $windowsDir 'src/DeepSeekHarness.csproj') -c Release -r win-x64 --self-contained true -o $publishDir
@@ -91,6 +94,7 @@ Copy-Item -Recurse -Force $runtime (Join-Path $buildDir 'runtime')
 Copy-Item -Recurse -Force $nodeRoot (Join-Path $buildDir 'node')
 Copy-Item -Recurse -Force $pnpmRoot (Join-Path $buildDir 'pnpm')
 New-Item -ItemType Directory -Force -Path (Join-Path $buildDir 'desktop') | Out-Null
+Copy-Item -Force (Join-Path $desktopDir 'resources/vision.patch.yml') (Join-Path $buildDir 'desktop/vision.patch.yml')
 Copy-Item -Force (Join-Path $desktopDir 'resources/market.patch.yml') (Join-Path $buildDir 'desktop/market.patch.yml')
 Copy-Item -Force (Join-Path $desktopDir 'resources/market-conflict.patch.yml') (Join-Path $buildDir 'desktop/market-conflict.patch.yml')
 Copy-Item -Force (Join-Path $desktopDir 'scripts/reset-web-profile.mjs') (Join-Path $buildDir 'desktop/reset-web-profile.mjs')

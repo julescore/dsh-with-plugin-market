@@ -6,7 +6,7 @@
 
 ## 运行时与插件市场
 
-`src/main.swift` 创建包含 `WKWebView` 的 AppKit 窗口，在随机回环端口启动内置 Node.js 24.19.0 与 Harness 生产运行时，并将内嵌导航限制在该来源；其他 HTTP 和 HTTPS 链接由默认浏览器打开。子进程使用用户主目录、标准 `~/.dsh` 状态和内置 pnpm 11.7.0，应用不会复制凭据。
+`src/main.swift` 创建包含 `WKWebView` 的 AppKit 窗口，在随机回环端口启动内置 Node.js 24.19.0 与 Harness 生产运行时，并将内嵌导航限制在该来源；其他 HTTP 和 HTTPS 链接由默认浏览器打开。子进程使用用户主目录、标准 `~/.dsh` 状态和内置 pnpm 11.7.0，应用不会复制凭据。应用始终挂载仓库自带的 `vision-image-model` 插件，提供设置卡片和只接受本地路径的 `vision_read_image` 工具。
 
 应用启动时会在菜单栏安装状态项图标。点窗口关闭按钮只隐藏窗口，Harness 进程继续运行；点状态项图标（或 Dock 图标）可重新打开窗口。通过应用菜单或状态项菜单“退出”才会停止后台进程。
 
@@ -33,7 +33,7 @@ pnpm run verify:macos
 .artifacts/macos/DeepSeek-Harness-<version>-macos-arm64.dmg
 ```
 
-`verify:macos` 会把 DMG 挂载到干净位置，检查应用标识、签名、运行时闭包、安装包内恢复工具的行为、两个社区 preset 的行为、通过 Host API 发现 preset 并完成组合、插件市场目录、`dsh-web-ui` 安装/重启/卸载、两种冲突选择，以及从 `dshmarket@1.1.0` 首次点击更新到 `1.2.3` 的真实路径。
+`verify:macos` 会把 DMG 挂载到干净位置，检查应用标识、签名、运行时闭包、安装包内恢复工具的行为、内置图片识别包、配置、设置客户端和工具声明、两个社区 preset 的行为、通过 Host API 发现 preset 并完成组合、插件市场目录、`dsh-web-ui` 安装/重启/卸载、两种冲突选择，以及从 `dshmarket@1.1.0` 首次点击更新到 `1.2.3` 的真实路径。
 
 ## 共享版本与发行
 

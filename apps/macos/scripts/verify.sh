@@ -78,7 +78,7 @@ start_host() {
       SHELL="${SHELL:-/bin/zsh}" \
       PATH="$node_bin:/usr/bin:/bin:/usr/sbin:/sbin" \
       TMPDIR="${TMPDIR:-/private/tmp}" \
-      "$node" "$launcher" web "$@" --port 0 >"$stdout" 2>"$stderr"
+      "$node" "$launcher" web --patch "$vision_patch" "$@" --port 0 >"$stdout" 2>"$stderr"
   ) &
   pid=$!
   url=""
@@ -141,20 +141,23 @@ codesign --verify --deep --strict "$mounted_app"
 node="$mounted_app/Contents/Resources/node/bin/node"
 node_bin="$mounted_app/Contents/Resources/node/bin"
 launcher="$mounted_app/Contents/Resources/runtime/lib/bin.js"
+vision_patch="$mounted_app/Contents/Resources/desktop/vision.patch.yml"
 market_patch="$mounted_app/Contents/Resources/desktop/market.patch.yml"
 market_conflict_patch="$mounted_app/Contents/Resources/desktop/market-conflict.patch.yml"
 recovery_script="$mounted_app/Contents/Resources/desktop/reset-web-profile.mjs"
 diagnosis_script="$mounted_app/Contents/Resources/desktop/diagnose-web-plugins.mjs"
 market_package="$mounted_app/Contents/Resources/runtime/node_modules/dshmarket-bundled/package.json"
+vision_package="$mounted_app/Contents/Resources/runtime/node_modules/dsh-vision-image-model-bundled/package.json"
 preset_root="$mounted_app/Contents/Resources/runtime/config/agent-presets"
 pnpm="$node_bin/pnpm"
 [[ -x "$pnpm" ]] || { echo "macOS verify: bundled pnpm launcher is missing" >&2; exit 1; }
 [[ $("$pnpm" --version) == "11.7.0" ]] || { echo "macOS verify: unexpected bundled pnpm version" >&2; exit 1; }
-[[ -f "$market_patch" && -f "$market_conflict_patch" && -f "$market_package" && -f "$recovery_script" && -f "$diagnosis_script" ]] || {
+[[ -f "$vision_patch" && -f "$vision_package" && -f "$market_patch" && -f "$market_conflict_patch" && -f "$market_package" && -f "$recovery_script" && -f "$diagnosis_script" ]] || {
   echo "macOS verify: bundled market resources are missing" >&2
   exit 1
 }
 [[ $("$node" -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).name" "$market_package") == "dshmarket-bundled" ]]
+[[ $("$node" -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).name" "$vision_package") == "dsh-vision-image-model-bundled" ]]
 [[ $("$node" -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).version" "$market_package") == "1.2.3" ]] || {
   echo "macOS verify: unexpected bundled market version" >&2
   exit 1
@@ -212,10 +215,31 @@ if candidates[0].get("signals") != ["failed load entry"]:
 PY_DIAGNOSIS
 
 # A fresh profile receives exactly the packaged market.
-env DSH_HOME="$fresh_home" "$node" "$launcher" web --patch "$market_patch" --dump-config >"$dump"
+env DSH_HOME="$fresh_home" "$node" "$launcher" web --patch "$vision_patch" --patch "$market_patch" --dump-config >"$dump"
 [[ $(grep -c '^- id: dsh-market$' "$dump") == 1 ]]
 [[ $(grep -c '^  name: dshmarket-bundled$' "$dump") == 1 ]]
+[[ $(grep -c '^- id: vision-image-model-packaged$' "$dump") == 1 ]]
+[[ $(grep -c '^  name: dsh-vision-image-model-bundled$' "$dump") == 1 ]]
 start_host "$fresh_home" --patch "$market_patch"
+vision_config=$(curl --fail --silent --show-error --max-time 30 "$url/vision-image-model/config")
+VISION_CONFIG="$vision_config" python3 - <<'PY_VISION_CONFIG'
+import json
+import os
+payload = json.loads(os.environ["VISION_CONFIG"])
+if payload.get("ok") is not True or payload.get("current") != {"provider": "", "model": ""}:
+    raise SystemExit(f"macOS verify: bundled vision config route is invalid: {payload}")
+if not isinstance(payload.get("candidates"), list):
+    raise SystemExit(f"macOS verify: bundled vision candidates are invalid: {payload}")
+PY_VISION_CONFIG
+index=$(curl --fail --silent --show-error --max-time 15 "$url/")
+[[ "$index" == *'"id":"dsh-vision-image-model-bundled"'* ]] || {
+  echo "macOS verify: bundled vision settings client is absent from the Web boot graph" >&2
+  exit 1
+}
+grep -Fq "const DEFAULT_TOOL_NAME = 'vision_read_image'"   "$mounted_app/Contents/Resources/runtime/node_modules/dsh-vision-image-model-bundled/dsh/index.js" || {
+  echo "macOS verify: bundled vision tool declaration is absent" >&2
+  exit 1
+}
 preset_list=$(curl --fail --silent --show-error --max-time 30 \
   -H "Content-Type: application/json" \
   -H "Origin: $url" \
@@ -308,7 +332,7 @@ PY_BUILD_POLICY
 stop_host
 
 # A restart proves the aggregate is a profile layer and its clients actually boot.
-env DSH_HOME="$fresh_home" "$node" "$launcher" web --patch "$market_patch" --dump-config >"$dump"
+env DSH_HOME="$fresh_home" "$node" "$launcher" web --patch "$vision_patch" --patch "$market_patch" --dump-config >"$dump"
 [[ $(grep -c '^# == @linxin666/dsh-web-ui-all$' "$dump") == 1 ]]
 start_host "$fresh_home" --patch "$market_patch"
 assert_market_client "dshmarket-bundled" "dshmarket" >/dev/null
@@ -346,7 +370,7 @@ stop_host
 env -i \
   HOME="$HOME" DSH_HOME="$conflict_home" USER="${USER:-}" LOGNAME="${LOGNAME:-}" SHELL="${SHELL:-/bin/zsh}" \
   PATH="$node_bin:/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="${TMPDIR:-/private/tmp}" CI=true \
-  "$node" "$launcher" web --dump-config >"$dump"
+  "$node" "$launcher" web --patch "$vision_patch" --dump-config >"$dump"
 env -i \
   HOME="$HOME" DSH_HOME="$conflict_home" USER="${USER:-}" LOGNAME="${LOGNAME:-}" SHELL="${SHELL:-/bin/zsh}" \
   PATH="$node_bin:/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="${TMPDIR:-/private/tmp}" CI=true \
@@ -358,7 +382,7 @@ env -i \
 }
 manifest="$conflict_home/profiles/web/package.json"
 manifest_before=$(shasum -a 256 "$manifest" | awk '{print $1}')
-env DSH_HOME="$conflict_home" "$node" "$launcher" web --dump-config >"$dump"
+env DSH_HOME="$conflict_home" "$node" "$launcher" web --patch "$vision_patch" --dump-config >"$dump"
 [[ $(grep -c '^- id: dsh-market$' "$dump") == 1 ]]
 [[ $(grep -c '^  name: dshmarket$' "$dump") == 1 ]]
 
@@ -372,7 +396,7 @@ stop_host
 }
 
 # "Use packaged" disables the local row only in this run and inserts the packaged alias.
-env DSH_HOME="$conflict_home" "$node" "$launcher" web --patch "$market_conflict_patch" --dump-config >"$dump"
+env DSH_HOME="$conflict_home" "$node" "$launcher" web --patch "$vision_patch" --patch "$market_conflict_patch" --dump-config >"$dump"
 [[ $(grep -c '^- id: dsh-market$' "$dump") == 1 ]]
 [[ $(grep -c '^- id: dsh-market-packaged$' "$dump") == 1 ]]
 [[ $(grep -c '^  name: dshmarket-bundled$' "$dump") == 1 ]]
@@ -413,5 +437,5 @@ PY_MARKET_VERSION
 stop_host
 
 sha256=$(shasum -a 256 "$dmg" | awk '{print $1}')
-printf 'macOS verification passed\nVERSION=%s\nBUNDLE_VERSION=%s\nBUILD=%s\nMARKET=dshmarket@1.2.3\nMARKET_DSH_WEB_UI=@linxin666/dsh-web-ui-all\nPRESETS=anchored-standard,zero-anchored-standard\nMARKET_DENIED_BUILDS=cloudflared,cpu-features,ssh2\nMARKET_CONFLICT_CHOICES=local,bundled\nMARKET_FIRST_CLICK_UPDATE=1.1.0-to-%s\nSTARTUP_PLUGIN_DIAGNOSIS=structured\nPNPM=11.7.0\nDMG=%s\nSHA256=%s\n' \
+printf 'macOS verification passed\nVERSION=%s\nBUNDLE_VERSION=%s\nBUILD=%s\nMARKET=dshmarket@1.2.3\nMARKET_DSH_WEB_UI=@linxin666/dsh-web-ui-all\nPRESETS=anchored-standard,zero-anchored-standard\nVISION=dsh-vision-image-model-bundled\nMARKET_DENIED_BUILDS=cloudflared,cpu-features,ssh2\nMARKET_CONFLICT_CHOICES=local,bundled\nMARKET_FIRST_CLICK_UPDATE=1.1.0-to-%s\nSTARTUP_PLUGIN_DIAGNOSIS=structured\nPNPM=11.7.0\nDMG=%s\nSHA256=%s\n' \
   "$version" "$bundle_version" "$build_number" "$market_updated_version" "$dmg" "$sha256"

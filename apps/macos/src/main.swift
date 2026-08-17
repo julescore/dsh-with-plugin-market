@@ -36,6 +36,7 @@ private struct HarnessResources {
     let root: URL
     let node: URL
     let launcher: URL
+    let visionPatch: URL
     let marketPatch: URL
     let marketConflictPatch: URL
     let recoveryScript: URL
@@ -47,6 +48,7 @@ private struct HarnessResources {
             root: root,
             node: root.appendingPathComponent("node/bin/node"),
             launcher: root.appendingPathComponent("runtime/lib/bin.js"),
+            visionPatch: root.appendingPathComponent("desktop/vision.patch.yml"),
             marketPatch: root.appendingPathComponent("desktop/market.patch.yml"),
             marketConflictPatch: root.appendingPathComponent("desktop/market-conflict.patch.yml"),
             recoveryScript: root.appendingPathComponent("desktop/reset-web-profile.mjs"),
@@ -57,6 +59,9 @@ private struct HarnessResources {
         }
         guard FileManager.default.fileExists(atPath: resources.launcher.path) else {
             throw failure(3, "DeepSeek Harness 运行时缺失。")
+        }
+        guard FileManager.default.fileExists(atPath: resources.visionPatch.path) else {
+            throw failure(4, "内置图片识别配置缺失。")
         }
         for patch in [resources.marketPatch, resources.marketConflictPatch] {
             guard FileManager.default.fileExists(atPath: patch.path) else {
@@ -86,7 +91,7 @@ private enum MarketLaunchMode {
     case bundledReplacingLocal
 
     func arguments(resources: HarnessResources) -> [String] {
-        var arguments = [resources.launcher.path, "web"]
+        var arguments = [resources.launcher.path, "web", "--patch", resources.visionPatch.path]
         switch self {
         case .local:
             break

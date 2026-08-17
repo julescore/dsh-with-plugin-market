@@ -34,7 +34,7 @@ function Start-Host([string]$DshHome, [string[]]$ExtraArguments) {
     $oldDshHome = $env:DSH_HOME
     try {
         $env:DSH_HOME = $DshHome
-        $arguments = @($launcher, 'web') + $ExtraArguments + @('--port', '0')
+        $arguments = @($launcher, 'web', '--patch', $visionPatch) + $ExtraArguments + @('--port', '0')
         $argumentLine = ($arguments | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }) -join ' '
         $script:hostProcess = Start-Process -FilePath $node -ArgumentList $argumentLine -WorkingDirectory $env:USERPROFILE `
             -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru -WindowStyle Hidden
@@ -92,11 +92,13 @@ try {
     $node = Join-Path $installDir 'node/node.exe'
     $pnpm = Join-Path $installDir 'node/pnpm.cmd'
     $launcher = Join-Path $installDir 'runtime/lib/bin.js'
+    $visionPatch = Join-Path $installDir 'desktop/vision.patch.yml'
     $marketPatch = Join-Path $installDir 'desktop/market.patch.yml'
     $marketConflictPatch = Join-Path $installDir 'desktop/market-conflict.patch.yml'
     $recoveryScript = Join-Path $installDir 'desktop/reset-web-profile.mjs'
     $diagnosisScript = Join-Path $installDir 'desktop/diagnose-web-plugins.mjs'
-    foreach ($path in @($app, $node, $pnpm, $launcher, $marketPatch, $marketConflictPatch, $recoveryScript, $diagnosisScript)) {
+    $visionPackage = Join-Path $installDir 'runtime/node_modules/dsh-vision-image-model-bundled/package.json'
+    foreach ($path in @($app, $node, $pnpm, $launcher, $visionPatch, $visionPackage, $marketPatch, $marketConflictPatch, $recoveryScript, $diagnosisScript)) {
         if (-not (Test-Path $path)) { throw "Windows verify: installed resource is missing: $path" }
     }
     $bundledBin = Split-Path -Parent $node
@@ -153,10 +155,20 @@ try {
     }
 
     $env:DSH_HOME = $freshHome
-    $dump = & $node $launcher web --patch $marketPatch --dump-config
+    $dump = & $node $launcher web --patch $visionPatch --patch $marketPatch --dump-config
     if (@($dump | Select-String -SimpleMatch '- id: dsh-market').Count -ne 1) { throw 'Windows verify: packaged market patch is absent' }
     if (@($dump | Select-String -SimpleMatch 'name: dshmarket-bundled').Count -ne 1) { throw 'Windows verify: packaged market alias is absent' }
+    if (@($dump | Select-String -SimpleMatch '- id: vision-image-model-packaged').Count -ne 1) { throw 'Windows verify: packaged vision row is absent' }
+    if (@($dump | Select-String -SimpleMatch 'name: dsh-vision-image-model-bundled').Count -ne 1) { throw 'Windows verify: packaged vision alias is absent' }
     $url = Start-Host $freshHome @('--patch', $marketPatch)
+    $visionConfig = Invoke-RestMethod -Method GET -Uri "$url/vision-image-model/config" -TimeoutSec 30
+    if ($visionConfig.ok -ne $true -or $visionConfig.current.provider -ne '' -or $visionConfig.current.model -ne '' -or $null -eq $visionConfig.candidates) {
+        throw "Windows verify: bundled vision config route is invalid: $($visionConfig | ConvertTo-Json -Depth 10 -Compress)"
+    }
+    $index = Invoke-WebRequest -UseBasicParsing -Uri "$url/" -TimeoutSec 30
+    if (-not $index.Content.Contains('"id":"dsh-vision-image-model-bundled"')) { throw 'Windows verify: bundled vision settings client is absent from the Web boot graph' }
+    $visionSource = Get-Content -Raw (Join-Path $installDir 'runtime/node_modules/dsh-vision-image-model-bundled/dsh/index.js')
+    if (-not $visionSource.Contains("const DEFAULT_TOOL_NAME = 'vision_read_image'")) { throw 'Windows verify: bundled vision tool declaration is absent' }
     $presetList = Invoke-RpcJson $url 'agentPreset.list' @{} 'desktop-preset-list'
     if ($presetList.result.ok -ne $true) { throw "Windows verify: agent preset list failed: $($presetList | ConvertTo-Json -Depth 10 -Compress)" }
     $presetEntries = @{}
@@ -187,13 +199,13 @@ try {
     Stop-Host
 
     $env:DSH_HOME = $conflictHome
-    & $node $launcher web --dump-config | Out-Null
+    & $node $launcher web --patch $visionPatch --dump-config | Out-Null
     & $node $launcher plugin --profile web add 'dshmarket@1.1.0'
     $marketVersion = (& $node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).version" (Join-Path $conflictHome 'profiles/web/node_modules/dshmarket/package.json'))
     if ($marketVersion -ne '1.1.0') { throw 'Windows verify: previous market fixture is not dshmarket@1.1.0' }
-    $localDump = & $node $launcher web --dump-config
+    $localDump = & $node $launcher web --patch $visionPatch --dump-config
     if (@($localDump | Select-String -SimpleMatch '- id: dsh-market').Count -ne 1) { throw 'Windows verify: local market conflict fixture is absent' }
-    $packagedDump = & $node $launcher web --patch $marketConflictPatch --dump-config
+    $packagedDump = & $node $launcher web --patch $visionPatch --patch $marketConflictPatch --dump-config
     if (@($packagedDump | Select-String -SimpleMatch '- id: dsh-market-packaged').Count -ne 1) { throw 'Windows verify: packaged conflict choice is absent' }
     if (@($packagedDump | Select-String -SimpleMatch 'name: dshmarket-bundled').Count -ne 1) { throw 'Windows verify: packaged conflict alias is absent' }
 
@@ -205,6 +217,7 @@ try {
     Write-Output 'MARKET=dshmarket@1.2.3'
     Write-Output 'MARKET_DSH_WEB_UI=@linxin666/dsh-web-ui-all'
     Write-Output 'PRESETS=anchored-standard,zero-anchored-standard'
+    Write-Output 'VISION=dsh-vision-image-model-bundled'
     Write-Output 'MARKET_CONFLICT_CHOICES=local,bundled'
     Write-Output 'STARTUP_PLUGIN_DIAGNOSIS=structured'
     Write-Output 'PNPM=11.7.0'
