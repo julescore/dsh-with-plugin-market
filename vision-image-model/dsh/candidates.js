@@ -31,7 +31,7 @@ function modelView(model) {
       ? { description: model.description }
       : {}),
     // true = positively declares image input; false = positively text-only;
-    // undefined = the adapter says nothing, which is never selectable.
+    // undefined = the adapter says nothing. All three states remain selectable.
     ...(modalities === undefined ? {} : { imageInput: modalities.includes('image') }),
   }
 }
@@ -46,6 +46,26 @@ function groupView(provider, name, active, models, error, configured) {
     models,
     ...(error === undefined ? {} : { error }),
   }
+}
+
+/**
+ * Validate that a user-selected route still exists in the active model catalog.
+ * Image capability metadata is advisory because users may know capabilities
+ * that an adapter's catalog does not yet declare.
+ * @param candidates - Candidate groups returned by `describeImageModelCandidates`.
+ * @param provider - Selected active provider route.
+ * @param model - Selected model id.
+ * @returns An error message when the route is unavailable; otherwise undefined.
+ */
+export function validateActiveModelSelection(candidates, provider, model) {
+  const group = candidates.find((entry) => entry.provider === provider)
+  if (!group || !group.active) {
+    return `provider "${provider}" is not an active configured model route`
+  }
+  if (!group.models.some((entry) => entry.id === model)) {
+    return `model "${model}" is not in provider "${provider}"'s current catalog`
+  }
+  return undefined
 }
 
 /**

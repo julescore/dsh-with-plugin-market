@@ -14,11 +14,11 @@ window.__ModuleLoader__.load({
     var TEXT = {
       en: {
         title: "Vision image model",
-        subtitle: "Pick one already-configured vision model for image reads. It is used exactly, with no failover.",
+        subtitle: "Pick any active configured model for image reads. Capability warnings are advisory; the selected model is used exactly, with no failover.",
         choose: "Choose an image model\u2026",
         currentBroken: "current selection (no longer available)",
-        notImage: "does not declare image input",
-        unknownModality: "does not declare image capabilities",
+        notImage: "declares text-only; image calls may fail",
+        unknownModality: "image capability unknown; image calls may fail",
         inactiveGroups: "Configured but inactive providers (fix them in Models, then reload this card):",
         catalogError: "Model catalog failed to load:",
         save: "Save",
@@ -33,11 +33,11 @@ window.__ModuleLoader__.load({
       },
       zh: {
         title: "图片模型（Vision）",
-        subtitle: "从已配置的模型里选一个作为图片读取模型；运行时精确使用，不做故障转移。",
+        subtitle: "可从已激活的模型里任选一个作为图片读取模型；能力提示仅供参考，运行时精确使用且不做故障转移。",
         choose: "选择一个图片模型\u2026",
         currentBroken: "当前选择（已失效）",
-        notImage: "未声明支持图片输入",
-        unknownModality: "未声明能力",
+        notImage: "声明为仅文本；图片调用可能失败",
+        unknownModality: "图片能力未知；图片调用可能失败",
         inactiveGroups: "已配置但未激活的提供商（请到 Models 修复后重新打开本卡片）：",
         catalogError: "模型目录加载失败：",
         save: "保存",
@@ -65,6 +65,19 @@ window.__ModuleLoader__.load({
       var at = value.indexOf("\u0000");
       if (at < 0) return { provider: "", model: "" };
       return { provider: value.slice(0, at), model: value.slice(at + 1) };
+    }
+
+    function modelOptionPresentation(provider, model, t) {
+      var suffix = model.imageInput === true
+        ? ""
+        : " \u2014 " + (model.imageInput === false ? t.notImage : t.unknownModality);
+      return {
+        props: {
+          key: provider + "/" + model.id,
+          value: optionId(provider, model.id),
+        },
+        label: model.name + " (" + model.id + ")" + suffix,
+      };
     }
 
     function createCard(react) {
@@ -239,19 +252,8 @@ window.__ModuleLoader__.load({
                   "optgroup",
                   { key: provider, label: groupName + " (" + provider + ")" },
                   list.map(function (entry) {
-                    var disabled = entry.model.imageInput !== true;
-                    var suffix = disabled
-                      ? " \u2014 " + (entry.model.imageInput === false ? t.notImage : t.unknownModality)
-                      : "";
-                    return h(
-                      "option",
-                      {
-                        key: provider + "/" + entry.model.id,
-                        value: optionId(provider, entry.model.id),
-                        disabled: disabled,
-                      },
-                      entry.model.name + " (" + entry.model.id + ")" + suffix,
-                    );
+                    var option = modelOptionPresentation(provider, entry.model, t);
+                    return h("option", option.props, option.label);
                   }),
                 ),
               );
@@ -507,6 +509,7 @@ window.__ModuleLoader__.load({
 
     exports.apply = apply;
     exports.inject = [];
+    exports.modelOptionPresentation = modelOptionPresentation;
     return module.exports;
   },
 });

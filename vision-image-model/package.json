@@ -3,7 +3,7 @@
   "version": "0.1.1",
   "private": true,
   "type": "module",
-  "description": "Standalone DeepSeek Harness plugin: pick one already-configured vision model as the image model, exact-locked at read time.",
+  "description": "Standalone DeepSeek Harness plugin: pick any active configured model for image reads, exact-locked at read time.",
   "license": "MIT",
   "exports": {
     ".": "./dsh/index.js",

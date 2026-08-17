@@ -15,7 +15,7 @@
 import { basename } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { describeImageModelCandidates } from './candidates.js'
+import { describeImageModelCandidates, validateActiveModelSelection } from './candidates.js'
 import { readLocalImage } from './local-image.js'
 import {
   ACCEPTED_MEDIA_TYPES,
@@ -402,21 +402,9 @@ function registerConfigRoute(webCtx, rootCtx, source, getScope) {
           // outage; anything new is validated against the live catalog.
           if (!sameSelection(source(), { provider, model })) {
             const candidates = await describeImageModelCandidates(rootCtx.llm, rootCtx.get?.('settings') ?? rootCtx.settings)
-            const group = candidates.find((entry) => entry.provider === provider)
-            const modelView = group?.models.find((entry) => entry.id === model)
-            if (!group || !group.active) {
-              sendJson(res, 400, { ok: false, error: `provider "${provider}" is not an active configured model route` })
-              return
-            }
-            if (modelView === undefined) {
-              sendJson(res, 400, { ok: false, error: `model "${model}" is not in provider "${provider}"'s current catalog` })
-              return
-            }
-            if (modelView.imageInput !== true) {
-              sendJson(res, 400, {
-                ok: false,
-                error: `model "${model}" does not declare image input; pick a vision-capable model`,
-              })
+            const validationError = validateActiveModelSelection(candidates, provider, model)
+            if (validationError !== undefined) {
+              sendJson(res, 400, { ok: false, error: validationError })
               return
             }
           }

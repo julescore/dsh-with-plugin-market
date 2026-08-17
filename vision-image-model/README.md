@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-A standalone DeepSeek Harness plugin that adds a Web settings card for selecting one configured image-capable model and a global `vision_read_image` tool that calls exactly that `{ provider, model }`. Calls never fail over to another model.
+A standalone DeepSeek Harness plugin that adds a Web settings card for selecting any model from an active configured provider and a global `vision_read_image` tool that calls exactly that `{ provider, model }`. Calls never fail over to another model.
 
 ## Image access and evidence
 
@@ -12,9 +12,9 @@ Accepted bytes are PNG, JPEG, GIF, or WebP, detected from their headers. The enc
 
 ## Selection and credentials
 
-`GET /vision-image-model/config` enumerates configured providers and their model catalogs. Only models that positively declare image input are selectable. The choice is stored in the `vision-image-model` settings namespace and applies live. Credentials continue to belong to the selected provider; this plugin stores none.
+`GET /vision-image-model/config` enumerates configured providers and their model catalogs. Every model in an active provider catalog is selectable. Declared text-only and unknown-capability models carry warnings instead of being disabled because an adapter catalog can lag behind a model that accepts images. The choice is stored in the `vision-image-model` settings namespace and applies live. Credentials continue to belong to the selected provider; this plugin stores none.
 
-An empty selection, unavailable route, rejected model request, or invalid model JSON is a tool error. A hand-written settings value is attempted at runtime even when the current catalog no longer lists it.
+Saving a new choice requires the provider to be active and the model to exist in its current catalog. An empty selection, unavailable route, rejected image request, or invalid model JSON is a tool error. A hand-written settings value is attempted at runtime even when the current catalog no longer lists it. Choosing a model that cannot actually accept images fails at the selected provider; the plugin does not switch models.
 
 ## Desktop distribution
 

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write vision-image-model/README.md
-README.md: 63b6b12cb796efd17eae4b864a3716d622ddf768
-README.zh.md: 45c6295bc2f0bb4c4573bcb8f59a8357d671e3c1
+README.md: e54a570590e54442a9ae92ebc0061db53856ea98
+README.zh.md: 2d18864370baa64bdb7e56174034fbd6e0164c46

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { describeImageModelCandidates, getPath } from '../dsh/candidates.js'
+import { describeImageModelCandidates, getPath, validateActiveModelSelection } from '../dsh/candidates.js'
 
 test('getPath reads nested objects and arrays', () => {
   const value = { providers: { openai: { model: 'qwen-vl' } }, list: [{ id: 1 }] }
@@ -65,4 +65,26 @@ test('configured-but-inactive directory entries appear, unconfigured ones do not
   assert.equal(groups[0].provider, 'inactive-route')
   assert.equal(groups[0].active, false)
   assert.match(groups[0].error, /not active/)
+})
+
+
+test('every model in an active catalog is selectable regardless of modality metadata', () => {
+  const candidates = [
+    {
+      provider: 'kiro-gpt',
+      active: true,
+      models: [
+        { id: 'vision', imageInput: true },
+        { id: 'text', imageInput: false },
+        { id: 'gpt-5.6-sol' },
+      ],
+    },
+    { provider: 'inactive', active: false, models: [{ id: 'model' }] },
+  ]
+
+  assert.equal(validateActiveModelSelection(candidates, 'kiro-gpt', 'vision'), undefined)
+  assert.equal(validateActiveModelSelection(candidates, 'kiro-gpt', 'text'), undefined)
+  assert.equal(validateActiveModelSelection(candidates, 'kiro-gpt', 'gpt-5.6-sol'), undefined)
+  assert.match(validateActiveModelSelection(candidates, 'inactive', 'model'), /not an active configured model route/)
+  assert.match(validateActiveModelSelection(candidates, 'kiro-gpt', 'missing'), /not in provider/)
 })

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-17-bundled-vision-image-model.md
-2026-08-17-bundled-vision-image-model.md: 251c79666a45d9f7c78dadb924d3eabce8c499dd
-2026-08-17-bundled-vision-image-model.zh.md: 89542d4f7f86e3cf5f49a3179b0756a69628d5eb
+2026-08-17-bundled-vision-image-model.md: c84a9d34b9526b08a734bddba75336d8c3b4eef2
+2026-08-17-bundled-vision-image-model.zh.md: ac33d317f5ff9324ad898d563c9ae3fd3c40b56b
