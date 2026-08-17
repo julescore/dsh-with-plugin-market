@@ -16,6 +16,7 @@ REQUIRED_FILES = {
     "dsh/client.js",
     "dsh/candidates.js",
     "dsh/local-image.js",
+    "dsh/prompt-admission.js",
     "dsh/vision.js",
 }
 

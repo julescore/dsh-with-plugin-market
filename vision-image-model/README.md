@@ -2,7 +2,13 @@
 
 English | [中文](README.zh.md)
 
-A standalone DeepSeek Harness plugin that adds a Web settings card for selecting any model from an active configured provider and a global `vision_read_image` tool that calls exactly that `{ provider, model }`. Calls never fail over to another model.
+A standalone DeepSeek Harness plugin that selects an image-recognition model independently of the conversation model. It preprocesses browser-uploaded images and provides a global `vision_read_image` tool; both call exactly the configured `{ provider, model }` and never fail over.
+
+## Uploaded prompt images
+
+When both fields are configured, the plugin handles every image in `session.prompt` before the conversation model runs. Original images remain displayable and exportable, while model history receives the user's text plus a durable textual reading containing summary, OCR, layout, uncertainty, and the image-model route. A text-only conversation model can therefore answer an image-bearing user prompt without receiving image blocks itself.
+
+Recognition failure rejects the prompt. An empty image-model selection preserves native multimodal behavior, including the conversation model's capability check. The conversation selector and this plugin's settings remain independent.
 
 ## Image access and evidence
 

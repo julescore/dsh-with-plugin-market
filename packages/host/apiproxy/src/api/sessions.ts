@@ -52,7 +52,13 @@ declare module '@deepseek-ai/dsh-llm' {
      * carries no transport vocabulary; rpcId and the optional Host-validated browser zone are
      * durable JSON fields passed back to the client with the event.
      */
-    'user-rpc': { kind: 'user'; rpcId: RpcId; clientTimeZone?: string }
+    'user-rpc': {
+      kind: 'user'
+      rpcId: RpcId
+      clientTimeZone?: string
+      /** Original user-visible blocks when a plugin replaced model-facing image content with text. */
+      displayContent?: readonly ContentBlock[]
+    }
   }
 }
 
@@ -349,7 +355,7 @@ export interface SessionsApi {
     mode: 'queue' | 'steer'
     content: PromptContentPart[]
     clientTimeZone?: string
-  }>):
+  }>, signal?: AbortSignal):
   Promise<RpcResponse<{ accepted: true; command?: { kind: 'success'; text?: string } }>>
 
   /** Reads one durable image after proving that this session's log references its id. */

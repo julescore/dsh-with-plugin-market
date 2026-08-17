@@ -21,6 +21,12 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   }
 }
 
+function displayContent(source: unknown): UserMessageNode['content'] | undefined {
+  if (typeof source !== 'object' || source === null) return undefined
+  const value = (source as { displayContent?: unknown }).displayContent
+  return Array.isArray(value) ? value as UserMessageNode['content'] : undefined
+}
+
 function isCompactionCheckpoint(event: Parameters<ConversationNodeDefinition['match']>[0]): boolean {
   if (event.type !== 'user/message' || !isReplacementSurfaceEvent(event)) return false
   const source = event.data.source
@@ -57,14 +63,14 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
         messageId: event.data.id,
         seq: event.seq,
         time: event.time,
-        content: event.data.content,
+        content: displayContent(event.data.source) ?? event.data.content,
         source: event.data.source,
       }
       : {
         kind: 'user',
         seq: event.seq,
         time: event.time,
-        content: event.data.content,
+        content: displayContent(event.data.source) ?? event.data.content,
         source: event.data.source,
       }
   },

@@ -196,6 +196,106 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('admits a transformed image prompt to a text-only conversation model while retaining display evidence', async () => {
+    const { ctx, agent, sessionId } = await harness()
+    registerTextOnly(ctx)
+    const ref = {
+      attachmentId: 'att-transformed', mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1,
+    }
+    ctx.provide('attachments', {
+      imageLimits: {
+        maxImageBytes: 4,
+        maxImagesPerMessage: 2,
+        maxMessageImageBytes: 4,
+        maxImagePixels: 4,
+        mediaTypes: ['image/png'],
+      },
+      validateImage: vi.fn(() => Promise.resolve()),
+      saveImage: vi.fn(() => Promise.resolve(ref)),
+    } as never)
+    ctx.on('session/prompt-images/available', () => async ({ content, images }) => {
+      expect(content).toEqual([
+        { type: 'text', text: 'what is shown?' },
+        { type: 'image', attachment: ref },
+      ])
+      expect(images).toEqual([ref])
+      return {
+        kind: 'transformed' as const,
+        content: [
+          { type: 'text' as const, text: 'what is shown?' },
+          { type: 'text' as const, text: '[Image 1] a settings dialog' },
+        ],
+      }
+    })
+    const followup = vi.fn()
+    Object.assign(agent, { followup })
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+    expect(expectValue(await api.sessions.selectModel(request({
+      sessionId, provider: 'text-only', model: 'plain',
+    }))).selected).toEqual({ provider: 'text-only', model: 'plain' })
+
+    const result = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [
+        { type: 'text' as const, text: 'what is shown?' },
+        { type: 'image' as const, mediaType: 'image/png' as const, data: 'AQ==' },
+      ],
+    }))
+    expect(result.result.ok).toBe(true)
+    const message = followup.mock.calls[0]?.[0] as UserMessage
+    expect(message.content).toEqual([
+      { type: 'text', text: 'what is shown?' },
+      { type: 'text', text: '[Image 1] a settings dialog' },
+    ])
+    expect(message.source).toMatchObject({
+      kind: 'user',
+      displayContent: [
+        { type: 'text', text: 'what is shown?' },
+        { type: 'image', attachment: ref },
+      ],
+    })
+    await ctx.fiber.dispose()
+  })
+
+  it('keeps native image capability enforcement when no plugin transforms the prompt', async () => {
+    const { ctx, sessionId } = await harness()
+    registerTextOnly(ctx)
+    const saveImage = vi.fn(() => Promise.resolve({
+      attachmentId: 'att-native', mediaType: 'image/png', bytes: 1, width: 1, height: 1,
+    }))
+    ctx.provide('attachments', {
+      imageLimits: {
+        maxImageBytes: 4,
+        maxImagesPerMessage: 2,
+        maxMessageImageBytes: 4,
+        maxImagePixels: 4,
+        mediaTypes: ['image/png'],
+      },
+      validateImage: vi.fn(() => Promise.resolve()),
+      saveImage,
+    } as never)
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+    expectValue(await api.sessions.selectModel(request({ sessionId, provider: 'text-only', model: 'plain' })))
+    const result = await api.sessions.prompt(request({
+      sessionId,
+      mode: 'queue' as const,
+      content: [{ type: 'image' as const, mediaType: 'image/png' as const, data: 'AQ==' }],
+    }))
+    expect(result.result).toMatchObject({
+      ok: false,
+      error: { code: 'attachment-error', details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' } },
+    })
+    expect(saveImage).not.toHaveBeenCalled()
+    await ctx.fiber.dispose()
+  })
+
   it('refuses a text-only selection while durable or pending image content remains visible', async () => {
     const { ctx, agent, sessionId } = await harness()
     registerTextOnly(ctx)
@@ -249,8 +349,9 @@ describe('Web session model selection', () => {
       target: 'next-turn',
       start: 0,
       inserted: [{
-        id: 'queued-image', role: 'user', source: { kind: 'user' },
-        content: [{ type: 'image', attachment: ref }],
+        id: 'queued-image', role: 'user',
+        source: { kind: 'user', displayContent: [{ type: 'image', attachment: ref }] },
+        content: [{ type: 'text', text: 'image reading' }],
       }],
     } as never)
 

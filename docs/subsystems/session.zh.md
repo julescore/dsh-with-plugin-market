@@ -848,4 +848,25 @@ Awaited parallel durability checkpoint: every listener runs and the caller await
 Types: [Scoped](scope.md)
 
 Source: [`packages/core/session/src/index.ts:85`](../../packages/core/session/src/index.ts)
+
+<a id="sessionprompt-imagesavailable--bail"></a>
+
+#### `session/prompt-images/available` — bail
+
+Prepare an image transformer under the listener's current configuration. The returned function captures one fixed image-model route for the whole prompt; no return preserves native multimodal admission and capability preflight.
+
+```ts cordis-catalog
+/**
+ * Prepare an image transformer under the listener's current configuration.
+ * The returned function captures one fixed image-model route for the whole
+ * prompt; no return preserves native multimodal admission and capability
+ * preflight.
+ * @mode bail
+ */
+'session/prompt-images/available'(): PromptImageTransformer | void
+```
+
+Types: [PromptImageTransformer](attachment.md)
+
+Source: [`packages/host/apiproxy/src/prompt-images.ts:40`](../../packages/host/apiproxy/src/prompt-images.ts)
 <!-- END GENERATED cordis-surface -->

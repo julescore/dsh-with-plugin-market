@@ -1,9 +1,9 @@
 {
   "name": "dsh-vision-image-model",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Standalone DeepSeek Harness plugin: pick any active configured model for image reads, exact-locked at read time.",
+  "description": "Standalone DeepSeek Harness plugin: independently read uploaded or local images with any selected active model.",
   "license": "MIT",
   "exports": {
     ".": "./dsh/index.js",

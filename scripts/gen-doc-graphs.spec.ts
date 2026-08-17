@@ -25,7 +25,7 @@ const FIXTURE: Record<string, string> = {
     },
     include: ['vendor/**/*.ts', 'packages/**/*.ts'],
   }),
-  'vendor/cordis/src/context.ts': 'export class Context { private brand!: void }\n',
+  'vendor/cordis/src/context.ts': 'export class Context { private brand!: void; bail(name: string): unknown { return name } }\n',
   'vendor/cordis/src/events.ts': [
     'export class EventsService {',
     '  dispatch(type: string, args: unknown[]): unknown[] { return [type, args] }',
@@ -39,8 +39,11 @@ const FIXTURE: Record<string, string> = {
   // const is a value-position reference, so the proof fails and the global
   // fallback must find the cross-file call in pkgb.
   'packages/fix/pkga/src/index.ts': [
+    "import { Context } from '../../../../vendor/cordis/src/context.ts'",
     "import { EventsService } from '../../../../vendor/cordis/src/events.ts'",
     'declare const events: EventsService',
+    'declare const ctx: Context',
+    "void ctx.bail('pkga/bail-event')",
     "function fireLocal(args: [string]): void { void events.dispatch('emit', args) }",
     "fireLocal(['pkga/local-event'])",
     "function fireAliased(args: [string]): void { void events.dispatch('emit', args) }",
@@ -84,6 +87,10 @@ function dispatchersOf(pkgs: readonly string[], event: string): string[] {
 describe('event relation call-site indexing', () => {
   it('recovers a proven-local helper through the single-file fast path', () => {
     expect(dispatchersOf(['pkga', 'pkgb'], 'pkga/local-event')).toEqual(['pkga'])
+  })
+
+  it('classifies synchronous bail dispatches on a Context receiver', () => {
+    expect(dispatchersOf(['pkga'], 'pkga/bail-event')).toEqual(['pkga'])
   })
 
   it('recovers an alias-escaped helper through the global fallback', () => {

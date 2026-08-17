@@ -85,6 +85,7 @@ python (Join-Path $desktopDir 'scripts/install-vision-plugin.py') $runtime (Join
 node (Join-Path $desktopDir 'scripts/verify-agent-presets.mjs') (Join-Path $runtime 'config/agent-presets')
 node --check (Join-Path $runtime 'node_modules/dsh-vision-image-model-bundled/dsh/index.js')
 node --check (Join-Path $runtime 'node_modules/dsh-vision-image-model-bundled/dsh/local-image.js')
+node --check (Join-Path $runtime 'node_modules/dsh-vision-image-model-bundled/dsh/prompt-admission.js')
 node (Join-Path $desktopDir 'scripts/verify-vision-client.mjs') (Join-Path $runtime 'node_modules/dsh-vision-image-model-bundled/dsh/client.js') 'dsh-vision-image-model-bundled'
 
 $publishDir = Join-Path $workRoot 'shell'

@@ -4,7 +4,28 @@ English | [中文](attachment.zh.md)
 
 The attachment seam separates binary image ownership from the session log. A producer gives validated encoded bytes to [`ctx.attachments`](#ctxattachments--attachmentstore-abstract-seam); the service publishes an immutable content-addressed reference only after the object is durable. Session events and model-visible `ImageBlock`s contain that reference and metadata, never a browser object URL, host temporary path, provider URL, or base64 payload.
 
-Unsent browser drafts may stay in memory and native clients may stage them in operating-system temporary storage. Once the host accepts a user message, its images move below `<DSH_HOME>/attachments/v1` before the user event is appended. Structured model image output follows the same persist-before-event rule.
+Unsent browser drafts may stay in memory and native clients may stage them in operating-system temporary storage. Once the host accepts a user message, its images move below `<DSH_HOME>/attachments/v1` before the user event is appended. When no prompt-image transformer is configured, the durable image reference remains in model-visible content and the selected conversation model must accept image input. A transformer can instead read each durable image through an independently configured image model, put only the resulting text in model-visible content, and preserve the original blocks in `MessageSource.displayContent` for rendering, authorized download, and export. Structured model image output follows the same persist-before-event rule.
+
+```text
+/** One durable image prompt awaiting either native admission or plugin transformation. */
+interface PromptImageAdmission {
+  sessionId: SessionId
+  content: readonly ContentBlock[]
+  images: readonly ImageAttachmentRef[]
+  signal?: AbortSignal
+}
+
+/** Image-free model content returned by a prepared prompt-image transformer. */
+interface PromptImageAdmissionDecision {
+  readonly kind: 'transformed'
+  readonly content: readonly ContentBlock[]
+}
+
+/** One per-prompt transformer with its image-model selection captured at preparation time. */
+type PromptImageTransformer = (
+  admission: PromptImageAdmission,
+) => Promise<PromptImageAdmissionDecision>
+```
 
 Source: [`packages/attachment/attachment/src/types.ts`](../../packages/attachment/attachment/src/types.ts)
 

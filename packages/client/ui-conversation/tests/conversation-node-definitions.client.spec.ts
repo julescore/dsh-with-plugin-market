@@ -439,6 +439,28 @@ describe('built-in conversation node Definitions', () => {
     expect(tail.branchUnavailable).toBe(true)
   })
 
+  it('renders display-only original image content while keeping transformed text out of the user bubble', () => {
+    const displayContent = [
+      { type: 'text', text: 'what is this?' },
+      { type: 'image', attachment: { attachmentId: 'att-display', mediaType: 'image/png', bytes: 1, width: 1, height: 1 } },
+    ]
+    const value = assembler([
+      at(1, 'user/message', {
+        id: 'transformed-image',
+        role: 'user',
+        content: [
+          { type: 'text', text: 'what is this?' },
+          { type: 'text', text: '[Image 1] recognized settings dialog' },
+        ],
+        source: { kind: 'user', rpcId: 'rpc-image', displayContent },
+      }, { surfaceOp: 'append' }),
+    ])
+    expect(node(snapshot(value), 'user')?.data).toMatchObject({
+      kind: 'user',
+      content: displayContent,
+    })
+  })
+
   it('replays inbox predecessors after prepend and reclassifies the dependent message as steering', () => {
     const value = assembler([
       at(3, 'user/message', textMessage('steer-1', 'change direction'), { surfaceOp: 'append' }),

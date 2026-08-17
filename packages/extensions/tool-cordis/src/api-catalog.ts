@@ -2438,6 +2438,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'session', description: 'the session whose buffered events must reach durable storage.' }],
   },
   {
+    name: 'session/prompt-images/available',
+    mode: 'bail',
+    signature: '\'session/prompt-images/available\'(): PromptImageTransformer | void',
+    summary: 'Prepare an image transformer under the listener\'s current configuration.',
+    description: 'Prepare an image transformer under the listener\'s current configuration. The returned function captures one fixed image-model route for the whole prompt; no return preserves native multimodal admission and capability preflight.',
+    parameters: [],
+  },
+  {
     name: 'settings/document-updated',
     mode: 'emit',
     signature: '\'settings/document-updated\'(ns: SettingsNamespace, revision: number): void',
@@ -3540,6 +3548,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PromptContext',
     declaration: 'export interface PromptContext {\n    readonly name: string;\n    readonly order: number;\n    readonly text: string | ((context: AssembleContext) => string);\n}',
+  },
+  {
+    name: 'PromptImageAdmission',
+    declaration: 'export interface PromptImageAdmission {\n    sessionId: SessionId;\n    content: readonly ContentBlock[];\n    images: readonly ImageAttachmentRef[];\n    signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'PromptImageAdmissionDecision',
+    declaration: 'export interface PromptImageAdmissionDecision {\n    readonly kind: \'transformed\';\n    readonly content: readonly ContentBlock[];\n}',
+  },
+  {
+    name: 'PromptImageTransformer',
+    declaration: 'export type PromptImageTransformer = (admission: PromptImageAdmission) => Promise<PromptImageAdmissionDecision>;',
   },
   {
     name: 'PromptSection',

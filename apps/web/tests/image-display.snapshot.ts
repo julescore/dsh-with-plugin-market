@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 // Multimodal image surfaces over the BUILT client graph (the code-mode-fixture
 // idiom: real bundles via AppWebEntry, keyless FixtureApiClient transport).
-// Opens the fixture history session whose turn 73 carries an image in BOTH a
-// user message and an assistant message, and pins the product surfaces: the
+// Opens the fixture history session whose turn 73 keeps the original user
+// image in displayContent while model-visible content contains only the
+// independent vision model's text. The assistant message also carries an image.
+// The test pins the product surfaces: the
 // history ImageGallery loading real fixture bytes through the authorized
 // sessions.attachment route, the single-click ImageLightbox, and the composer
 // intake chain (paste → ordered thumbnail rail → image-only send enablement → remove).
@@ -12,7 +14,7 @@ import { installAssembledBootEnv, mountAssembledApp } from './assembled-boot.ts'
 
 installAssembledBootEnv()
 
-/** Open the fixture history session (the alpha log carrying the turn-72 image pair) and wait for its gallery. */
+/** Open the fixture history session (the alpha log carrying the turn-73 image pair) and wait for its gallery. */
 async function openFixtureSession(): Promise<void> {
   const tree = await screen.findByRole('tree', { name: 'Sessions' }, { timeout: 10_000 })
   const group = (await within(tree).findAllByText('fixture'))
@@ -64,7 +66,13 @@ it('renders the history image pair through the authorized attachment route and o
       ],
     }
   `)
-  const userImage = document.querySelector<HTMLElement>('[data-align="end"] img')!
+  const userGallery = document.querySelector<HTMLElement>('[data-align="end"]')!
+  const userMessage = userGallery.closest<HTMLElement>('[data-time-hover-root]')
+  if (userMessage === null) throw new Error('user message row missing')
+  expect(userMessage.textContent).toContain('历史用户图片')
+  expect(userMessage.textContent).not.toContain('[Image 1 read by fixture/vision]')
+  expect(document.body.textContent).not.toContain('[Image 1 read by fixture/vision]')
+  const userImage = userGallery.querySelector<HTMLElement>('img')!
 
   // A single click opens the original-size lightbox; Escape/close dismisses it.
   const frame = userImage.closest('button')

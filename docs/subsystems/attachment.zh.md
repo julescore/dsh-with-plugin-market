@@ -4,7 +4,28 @@
 
 附件 seam 将二进制图片的所有权与会话日志分离。生产方把经过校验的编码字节交给 [`ctx.attachments`](#ctxattachments--attachmentstore-abstract-seam)；只有对象完成持久化后，该服务才会发布不可变的内容寻址引用。会话事件和模型可见的 `ImageBlock` 包含该引用及其元数据，绝不包含浏览器对象 URL、宿主临时路径、提供方 URL 或 base64 数据。
 
-未发送的浏览器草稿可以保留在内存中，原生客户端也可以将其暂存于操作系统临时存储。宿主接受用户消息后，会先把消息中的图片移到 `<DSH_HOME>/attachments/v1` 下，再追加用户事件。结构化模型图片输出遵循同样的先持久化、后追加事件规则。
+未发送的浏览器草稿可以保留在内存中，原生客户端也可以将其暂存于操作系统临时存储。宿主接受用户消息后，会先把消息中的图片移到 `<DSH_HOME>/attachments/v1` 下，再追加用户事件。未配置 prompt 图片转换器时，持久图片引用仍进入模型可见内容，所选对话模型必须接受图片输入。转换器也可以通过独立配置的图片模型读取每张持久图片，仅将识别文本放入模型可见内容，并把原始块保存在 `MessageSource.displayContent` 中，供界面渲染、授权下载和导出使用。结构化模型图片输出遵循同样的先持久化、后追加事件规则。
+
+```text
+/** One durable image prompt awaiting either native admission or plugin transformation. */
+interface PromptImageAdmission {
+  sessionId: SessionId
+  content: readonly ContentBlock[]
+  images: readonly ImageAttachmentRef[]
+  signal?: AbortSignal
+}
+
+/** Image-free model content returned by a prepared prompt-image transformer. */
+interface PromptImageAdmissionDecision {
+  readonly kind: 'transformed'
+  readonly content: readonly ContentBlock[]
+}
+
+/** One per-prompt transformer with its image-model selection captured at preparation time. */
+type PromptImageTransformer = (
+  admission: PromptImageAdmission,
+) => Promise<PromptImageAdmissionDecision>
+```
 
 来源：[`packages/attachment/attachment/src/types.ts`](../../packages/attachment/attachment/src/types.ts)
 

@@ -62,6 +62,8 @@ import type {} from '@deepseek-ai/dsh-session-projection'
 // Type-only: resolves `ctx.get('tasks')` to the background job registry.
 import type {} from '@deepseek-ai/dsh-jobs'
 import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
+import type { PromptImageTransformer } from './prompt-images.ts'
+import type {} from './prompt-images.ts'
 // Type-only: resolves `ctx.get('sessionProjectionCache')` (the cold listing column).
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
 // GoalError narrows domain rejections to their stable codes at the wire boundary.
@@ -205,23 +207,35 @@ function imageBlockIn(content: unknown, match: (ref: ImageAttachmentRef) => bool
   return undefined
 }
 
-/** Search every durable event carrier that can own model-visible content. */
+/** Search one durable message's model content and optional display-only original content. */
+function imageInMessage(
+  message: { content?: unknown; source?: unknown },
+  match: (ref: ImageAttachmentRef) => boolean,
+): ImageAttachmentRef | undefined {
+  const modelVisible = imageBlockIn(message.content, match)
+  if (modelVisible !== undefined) return modelVisible
+  if (typeof message.source !== 'object' || message.source === null) return undefined
+  return imageBlockIn((message.source as { displayContent?: unknown }).displayContent, match)
+}
+
+/** Search every durable event carrier that can own model-visible or display-only image content. */
 function imageInEvent(event: SessionEvent, match: (ref: ImageAttachmentRef) => boolean): ImageAttachmentRef | undefined {
   const data = event.data as {
     content?: unknown
-    message?: { content?: unknown }
-    inserted?: Array<{ content?: unknown }>
+    source?: unknown
+    message?: { content?: unknown; source?: unknown }
+    inserted?: Array<{ content?: unknown; source?: unknown }>
     chunk?: { type?: unknown; block?: unknown }
   }
-  const direct = imageBlockIn(data.content, match)
+  const direct = imageInMessage(data, match)
   if (direct !== undefined) return direct
   if (data.message !== undefined) {
-    const wrapped = imageBlockIn(data.message.content, match)
+    const wrapped = imageInMessage(data.message, match)
     if (wrapped !== undefined) return wrapped
   }
   if (data.inserted !== undefined) {
     for (const message of data.inserted) {
-      const inserted = imageBlockIn(message.content, match)
+      const inserted = imageInMessage(message, match)
       if (inserted !== undefined) return inserted
     }
   }
@@ -2458,7 +2472,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         return ok(request, { sessionId: childId })
       },
 
-      async prompt(request) {
+      async prompt(request, signal) {
         const { sessionId, mode, content, clientTimeZone } = request.payload
         const canonicalTimeZone = clientTimeZone === undefined
           ? undefined
@@ -2473,16 +2487,14 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         const resolved = await turnAgentFor<{ accepted: true }>(request, sessionId)
         if ('refused' in resolved) return resolved.refused
         const agent = resolved.agent
-        // Request identity and optional browser zone ride the exact durable user message.
-        const source: MessageSource = {
-          kind: 'user',
-          rpcId: request.rpcId,
-          ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
-        }
         const hasImage = content.some(part => part.type === 'image')
         const admit = async (): Promise<RpcResponse<{ accepted: true }>> => {
           try {
-            if (hasImage) {
+            const prepared = hasImage ? ctx.bail('session/prompt-images/available') : undefined
+            const imageTransformer: PromptImageTransformer | undefined = typeof prepared === 'function'
+              ? prepared
+              : undefined
+            if (hasImage && imageTransformer === undefined) {
               const current = selectionFor(agent).current
               const modelInfo = await ctx.llm.resolveModelInfo(current.provider, current.model)
               if (modelInfo.inputModalities !== undefined && !modelInfo.inputModalities.includes('image')) {
@@ -2494,7 +2506,29 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
               }
             }
             const durable = await durablePromptContent(ctx, content)
-            const message: UserMessage = createUserMessage({ content: durable, source })
+            let modelContent: ContentBlock[] = durable
+            if (imageTransformer !== undefined) {
+              const images = durable.flatMap(block => block.type === 'image' ? [block.attachment] : [])
+              const imageDecision = await imageTransformer({
+                sessionId,
+                content: durable,
+                images,
+                ...(signal === undefined ? {} : { signal }),
+              })
+              if (imageDecision.content.some(block => contentHasImage([block]))) {
+                throw new Error('session/prompt-images/available transformer returned content that still contains an image')
+              }
+              modelContent = [...imageDecision.content]
+            }
+            // Request identity, optional browser zone, and display-only originals
+            // ride the exact durable user message. Only `content` reaches models.
+            const source: MessageSource = {
+              kind: 'user',
+              rpcId: request.rpcId,
+              ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
+              ...(imageTransformer === undefined ? {} : { displayContent: durable }),
+            }
+            const message: UserMessage = createUserMessage({ content: modelContent, source })
             if (mode === 'steer') agent.steer(message)
             else agent.followup(message)
           } catch (error: unknown) {

@@ -80,6 +80,28 @@ describe('queue snapshot intake', () => {
     ])
   })
 
+  it('projects display-only originals instead of model-facing image readings', () => {
+    const session = makeSession()
+    const display = [
+      { type: 'text' as const, text: 'describe this' },
+      { type: 'image' as const, attachment: { attachmentId: 'att-display' } },
+    ] as unknown as ContentBlock[]
+    session.handleMuxEnvelope(rid('env-display'), queueFrame([{
+      id: 'q-display',
+      body: '',
+      message: createUserMessage({
+        content: text('describe this\n[Image 1] recognized settings dialog'),
+        source: { kind: 'user', rpcId: rid('rpc-q-display'), displayContent: display } as never,
+      }),
+    }]))
+    expect(session.getSnapshot().queue).toMatchObject([{
+      id: 'q-display',
+      content: display,
+      preview: 'describe this [image]',
+      text: null,
+    }])
+  })
+
   it('caps previews at 200 code points and preserves the full editable text', () => {
     const session = makeSession()
     const body = '长'.repeat(201)

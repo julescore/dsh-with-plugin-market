@@ -17,6 +17,7 @@ import z from '@deepseek-ai/schemastery'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { describeImageModelCandidates, validateActiveModelSelection } from './candidates.js'
 import { readLocalImage } from './local-image.js'
+import { transformPromptImages } from './prompt-admission.js'
 import {
   ACCEPTED_MEDIA_TYPES,
   MAX_IMAGE_BYTES,
@@ -215,6 +216,18 @@ async function collectAnswer(stream) {
   return text
 }
 
+/** Call the configured image model once and normalize its evidence JSON. */
+async function recognizeImage(ctx, selection, attachment, focus, signal) {
+  const text = await collectAnswer(ctx.llm.stream({
+    provider: selection.provider,
+    model: selection.model,
+    system: visionSystemPrompt(focus),
+    messages: [imageMessage(focus, attachment)],
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return normalizeVisionResult(parseVisionJson(text))
+}
+
 /** Build the model-facing image message around the saved attachment ref. */
 function imageMessage(focus, attachment) {
   return {
@@ -316,15 +329,8 @@ function registerTool(ctx, source, config = {}) {
         prompt: typeof args.prompt === 'string' ? args.prompt.trim() : '',
       }
       try {
-        const text = await collectAnswer(ctx.llm.stream({
-          provider: selection.provider,
-          model: selection.model,
-          system: visionSystemPrompt(args.prompt),
-          messages: [imageMessage(args.prompt, attachment)],
-          signal: exec.signal,
-        }))
         return {
-          ...normalizeVisionResult(parseVisionJson(text)),
+          ...await recognizeImage(ctx, selection, attachment, args.prompt, exec.signal),
           evidence,
         }
       } catch (error) {
@@ -337,6 +343,32 @@ function registerTool(ctx, source, config = {}) {
   }
 
   ctx.tools.register(tool)
+}
+
+/**
+ * Replace browser-uploaded image blocks with readings from the independently
+ * configured image model. Original blocks remain in MessageSource for the UI;
+ * only the returned pure-text content enters conversation-model history.
+ */
+function registerPromptImageAdmission(ctx, source) {
+  ctx.on('session/prompt-images/available', () => {
+    const selection = source()
+    if (!selectionComplete(selection)) return undefined
+    return async (admission) => {
+      try {
+        return await transformPromptImages(
+          admission,
+          selection,
+          (attachment, focus, signal) => recognizeImage(ctx, selection, attachment, focus, signal),
+        )
+      } catch (error) {
+        throw new Error(
+          `image recognition failed with ${selection.provider}/${selection.model}: ${error instanceof Error ? error.message : String(error)}`,
+          { cause: error },
+        )
+      }
+    }
+  })
 }
 
 /**
@@ -429,6 +461,7 @@ export function apply(ctx, config = {}) {
   if (config.tool !== false) {
     registerTool(ctx, source, config)
   }
+  registerPromptImageAdmission(ctx, source)
 
   // webServer exists only under the web profile; headless stays untouched.
   if (config.settingsCard !== false && typeof ctx.inject === 'function') {

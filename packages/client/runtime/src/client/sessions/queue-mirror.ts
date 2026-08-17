@@ -20,6 +20,13 @@ function textOf(content: readonly ContentBlock[]): string | null {
 
 type QueueItems = Extract<MuxFrame, { type: 'session/queue' }>['items']
 
+function displayContent(message: QueueItems[number]['message']): readonly ContentBlock[] {
+  const source = message.source as unknown
+  if (typeof source !== 'object' || source === null) return message.content
+  const value = (source as { displayContent?: unknown }).displayContent
+  return Array.isArray(value) ? value as readonly ContentBlock[] : message.content
+}
+
 /** Authoritative transient queue projection and durable steering handoff. */
 export class SessionQueueMirror {
   private current: readonly QueuedMessage[] = []
@@ -47,14 +54,17 @@ export class SessionQueueMirror {
    * @param items - complete host queue snapshot.
    */
   replace(items: QueueItems): void {
-    this.current = items.map(item => ({
-      id: item.id,
-      messageId: item.message.id,
-      placement: item.placement,
-      content: item.message.content,
-      preview: previewOf(item.message.content),
-      text: textOf(item.message.content),
-    }))
+    this.current = items.map((item) => {
+      const content = displayContent(item.message)
+      return {
+        id: item.id,
+        messageId: item.message.id,
+        placement: item.placement,
+        content,
+        preview: previewOf(content),
+        text: textOf(content),
+      }
+    })
   }
 
   /**

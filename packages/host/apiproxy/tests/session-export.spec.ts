@@ -604,6 +604,18 @@ describe('session.export download endpoint', () => {
     await expect(response.arrayBuffer()).rejects.toEqual(new Error('descendant read failed'))
   })
 
+  it('includes display-only original images referenced outside model-facing content', async () => {
+    const line = '{"type":"user/message","seq":1,"time":1000,"data":{"content":[{"type":"text","text":"image reading"}],"source":{"kind":"user","displayContent":[{"type":"image","attachment":{"attachmentId":"display-1","mediaType":"image/png","bytes":4,"width":2,"height":2}}]}}}'
+    const root = artifact('session-root', undefined, line)
+    const api = await buildApi({ 'session-root': root })
+    const response = await toFetchHandler(api).fetch(
+      new Request('http://host/api/session.export?sessionId=session-root'),
+    )
+    const files = unzipSync(await responseBytes(response))
+    expect(Object.keys(files).sort()).toEqual(['media/display-1.png', 'session.jsonl'])
+    expect(files['media/display-1.png']).toEqual(storedImage('display-1').data)
+  })
+
   it('includes media objects referenced by the root log under media/<id>.<ext>', async () => {
     const root = artifact('session-root', undefined, [
       '{"type":"session","version":0,"id":"session-root","createdAt":1000}',

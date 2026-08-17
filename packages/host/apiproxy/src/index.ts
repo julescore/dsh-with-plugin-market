@@ -29,6 +29,7 @@ export { AbstractApiClient, InProcessApiClient } from './fetch/client.ts'
 export type { IApiClient } from './fetch/client.ts'
 export { createApiProxy } from './api-proxy.ts'
 export type { ApiProxyDefaults } from './api-proxy.ts'
+export type { PromptImageAdmission, PromptImageAdmissionDecision } from './prompt-images.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {

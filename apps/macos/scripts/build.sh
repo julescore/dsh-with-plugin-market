@@ -110,6 +110,7 @@ python3 "$desktop_dir/scripts/install-vision-plugin.py" "$runtime" "$root/vision
 node "$desktop_dir/scripts/verify-agent-presets.mjs" "$runtime/config/agent-presets"
 node --check "$runtime/node_modules/dsh-vision-image-model-bundled/dsh/index.js"
 node --check "$runtime/node_modules/dsh-vision-image-model-bundled/dsh/local-image.js"
+node --check "$runtime/node_modules/dsh-vision-image-model-bundled/dsh/prompt-admission.js"
 node "$desktop_dir/scripts/verify-vision-client.mjs" "$runtime/node_modules/dsh-vision-image-model-bundled/dsh/client.js" dsh-vision-image-model-bundled
 
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources/node/bin" "$app/Contents/Resources/runtime" \

@@ -563,13 +563,24 @@ function buildAlphaLog(): SessionEvent[] {
   push({ type: 'step/end', data: { turn: 72, step: 0 } })
   push({ type: 'turn/end', data: { turn: 72, reason: { kind: 'max-tokens' } } })
 
-  // Turn 73: user and assistant images share one durable fixture object.
+  // Turn 73: the user's model-visible content contains the independent vision
+  // model's text, while displayContent preserves the original text and image
+  // for the conversation UI. The assistant image shares the durable object.
   // The todo turn remains last so its standing projection stays visible.
   push({ type: 'turn/start', data: { turn: 73 } })
   push({
     type: 'user/message',
     surfaceOp: 'append',
-    data: userMessage([{ type: 'image', attachment: FIXTURE_IMAGE_REF }, ...text('历史用户图片')]),
+    data: userMessage(
+      [
+        ...text('历史用户图片'),
+        ...text('[Image 1 read by fixture/vision] OCR: fixture image text'),
+      ],
+      {
+        kind: 'user',
+        displayContent: [{ type: 'image', attachment: FIXTURE_IMAGE_REF }, ...text('历史用户图片')],
+      },
+    ),
   })
   push({ type: 'step/start', data: { turn: 73, step: 0 } })
   push({

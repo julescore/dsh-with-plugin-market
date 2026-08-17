@@ -144,14 +144,22 @@ function collectEventImageRefs(event: unknown, refs: Map<string, ImageAttachment
   if (typeof data !== 'object' || data === null) return
   const carrier = data as {
     content?: unknown
-    message?: { content?: unknown }
-    inserted?: Array<{ content?: unknown }>
+    source?: { displayContent?: unknown }
+    message?: { content?: unknown; source?: { displayContent?: unknown } }
+    inserted?: Array<{ content?: unknown; source?: { displayContent?: unknown } }>
     chunk?: { type?: unknown; block?: unknown }
   }
   collectImageRefs(carrier.content, refs)
-  if (carrier.message !== undefined) collectImageRefs(carrier.message.content, refs)
+  collectImageRefs(carrier.source?.displayContent, refs)
+  if (carrier.message !== undefined) {
+    collectImageRefs(carrier.message.content, refs)
+    collectImageRefs(carrier.message.source?.displayContent, refs)
+  }
   if (carrier.inserted !== undefined) {
-    for (const message of carrier.inserted) collectImageRefs(message.content, refs)
+    for (const message of carrier.inserted) {
+      collectImageRefs(message.content, refs)
+      collectImageRefs(message.source?.displayContent, refs)
+    }
   }
   if (carrier.chunk?.type === 'block-end') collectImageRefs([carrier.chunk.block], refs)
 }
